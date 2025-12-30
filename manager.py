@@ -1,1391 +1,1751 @@
 from kivy.uix.screenmanager import Screen
-from kivy.properties import ObjectProperty
-from kivy.uix.popup import Popup
-from kivy.uix.label import Label
-from kivy.metrics import dp, sp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.label import Label
 from kivy.uix.button import Button
-from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
+from kivy.uix.popup import Popup
+from kivy.uix.widget import Widget
+from kivy.uix.image import Image
+from kivy.uix.scatter import Scatter
+from kivy.graphics import Color, Rectangle, RoundedRectangle, Line
+from kivy.graphics.texture import Texture
+from kivy.core.window import Window
+from kivy.metrics import dp, sp
 from kivy.clock import Clock
 from database import Database
-from datetime import datetime, timedelta
-from kivy.uix.scrollview import ScrollView
-from kivy.uix.gridlayout import GridLayout
-from kivy.core.window import Window 
-from kivy.graphics import Color, Rectangle
-from kivy.lang import Builder
-
-Builder.load_string('''
-
-<ManagerScreen>:
-    sales_table: sales_table
-    
-    BoxLayout:
-        orientation: 'vertical'
-        padding: 10
-        spacing: 10
-        
-        # Cabeçalho
-        BoxLayout:
-            orientation: 'horizontal'
-            size_hint_y: None
-            height: 60
-            spacing: 10
-            
-            Label:
-                text: "Histórico de Vendas"
-                font_size: 24
-                bold: True
-                size_hint_x: 0.4
-                text_size: self.size
-                halign: 'left'
-                valign: 'middle'
-            
-            # Botões de ação
-            Button:
-                text: "Filtrar por Data"
-                size_hint_x: 0.2
-                background_color: (0.2, 0.4, 0.8, 1)
-                on_press: root.show_date_filter()
-            
-            Button:
-                text: "Atualizar"
-                size_hint_x: 0.15
-                background_color: (0.6, 0.6, 0.6, 1)
-                on_press: root.refresh_sales()
-            
-            Button:
-                text: "Nova Venda"
-                size_hint_x: 0.2
-                background_color: (0.2, 0.6, 0.2, 1)
-                on_press: root.new_sale()
-            
-            Button:
-                text: "Sair"
-                size_hint_x: 0.05
-                background_color: (0.8, 0.2, 0.2, 1)
-                on_press: app.stop()
-        
-        # Tabela de vendas
-        ScrollView:
-            GridLayout:
-                id: sales_table
-                cols: 6
-                size_hint_y: None
-                height: self.minimum_height
-                row_default_height: 40
-                row_force_default: True
-                spacing: 1
-                
-                # As vendas serão adicionadas dinamicamente pelo Python
-
-''')
-
-class SaleForm(Popup):
-    def __init__(self, manager_screen, **kwargs):
-        super(SaleForm, self).__init__(**kwargs)
-        self.manager_screen = manager_screen
-        self.title = "Registrar Venda"
-        
-        # Configurar tamanho responsivo
-        self.configure_responsive_size()
-        
-        # Obter produtos disponíveis
-        db = Database()
-        self.products = db.get_products_for_sale()
-        
-        # Criar dicionário de produtos para referência rápida
-        self.product_dict = {f"{p[0]} - {p[1]}": p for p in self.products}
-        
-        # Lista de itens da venda
-        self.sale_items = []
-        self.sale_total = 0.0
-        self.sale_id = None
-        
-        self.create_layout()
-        
-        # Vincular evento de redimensionamento
-        Window.bind(on_resize=self.on_window_resize)
-    
-    def configure_responsive_size(self):
-        """Configurar tamanho responsivo baseado no tamanho da tela"""
-        screen_width = Window.width
-        screen_height = Window.height
-        
-        # Definir tamanhos baseados no tamanho da tela
-        if screen_width < 600:  # Telas muito pequenas (celular)
-            self.size_hint = (0.95, 0.95)
-            self.pos_hint = {'center_x': 0.5, 'center_y': 0.5}
-        elif screen_width < 1024:  # Tablets
-            self.size_hint = (0.9, 0.9)
-            self.pos_hint = {'center_x': 0.5, 'center_y': 0.5}
-        else:  # Desktop
-            self.size_hint = (0.85, 0.85)
-            self.pos_hint = {'center_x': 0.5, 'center_y': 0.5}
-    
-    def on_window_resize(self, window, width, height):
-        """Reconfigurar layout quando a janela é redimensionada"""
-        self.configure_responsive_size()
-        # Recriar layout se necessário
-        if hasattr(self, 'content') and self.content:
-            self.create_layout()
-    
-    def get_responsive_font_size(self, base_size=14):
-        """Calcular tamanho de fonte responsivo"""
-        screen_width = Window.width
-        if screen_width < 600:
-            return sp(base_size * 0.8)
-        elif screen_width < 1024:
-            return sp(base_size * 0.9)
-        else:
-            return sp(base_size)
-    
-    def get_responsive_height(self, base_height=40):
-        """Calcular altura responsiva"""
-        screen_height = Window.height
-        if screen_height < 600:
-            return dp(base_height * 0.8)
-        elif screen_height < 800:
-            return dp(base_height * 0.9)
-        else:
-            return dp(base_height)
-    
-    def create_layout(self):
-        """Criar o layout principal do popup"""
-        screen_width = Window.width
-        
-        # Escolher orientação baseada no tamanho da tela
-        if screen_width < 800:  # Layout vertical para telas pequenas
-            main_layout = BoxLayout(
-                orientation='vertical', 
-                spacing=dp(10), 
-                padding=[dp(10), dp(10)]
-            )
-            
-            # Seção de produtos
-            product_section = self.create_product_selection_layout()
-            main_layout.add_widget(product_section)
-            
-            # Seção do carrinho
-            cart_section = self.create_cart_layout()
-            main_layout.add_widget(cart_section)
-            
-        else:  # Layout horizontal para telas grandes
-            main_layout = BoxLayout(
-                orientation='horizontal', 
-                spacing=dp(15), 
-                padding=[dp(20), dp(20)]
-            )
-            
-            # Lado esquerdo - Seleção de produtos
-            left_layout = self.create_product_selection_layout()
-            left_layout.size_hint_x = 0.5
-            
-            # Lado direito - Carrinho e finalização
-            right_layout = self.create_cart_layout()
-            right_layout.size_hint_x = 0.5
-            
-            main_layout.add_widget(left_layout)
-            main_layout.add_widget(right_layout)
-        
-        self.content = main_layout
-    
-    def create_product_selection_layout(self):
-        """Criar layout para seleção de produtos"""
-        left_layout = BoxLayout(
-            orientation='vertical', 
-            spacing=dp(8)
-        )
-        
-        # Título da seção
-        title_label = Label(
-            text="Adicionar Produtos",
-            font_size=self.get_responsive_font_size(18),
-            bold=True,
-            size_hint_y=None,
-            height=self.get_responsive_height(40)
-        )
-        left_layout.add_widget(title_label)
-        
-        # Layout para pesquisa
-        search_layout = BoxLayout(
-            size_hint_y=None, 
-            height=self.get_responsive_height(50), 
-            spacing=dp(10)
-        )
-        
-        search_label = Label(
-            text="Pesquisar:", 
-            size_hint_x=0.25,
-            font_size=self.get_responsive_font_size(12)
-        )
-        search_layout.add_widget(search_label)
-        
-        self.search_input = TextInput(
-            multiline=False, 
-            size_hint_x=0.75,
-            hint_text="Digite para pesquisar produtos",
-            font_size=self.get_responsive_font_size(12)
-        )
-        self.search_input.bind(text=self.filter_products)
-        search_layout.add_widget(self.search_input)
-        
-        # Seleção de produto
-        product_layout = BoxLayout(
-            size_hint_y=None, 
-            height=self.get_responsive_height(50), 
-            spacing=dp(10)
-        )
-        
-        product_label = Label(
-            text="Produto:", 
-            size_hint_x=0.25,
-            font_size=self.get_responsive_font_size(12)
-        )
-        product_layout.add_widget(product_label)
-        
-        product_options = [f"{p[0]} - {p[1]}" for p in self.products]
-        self.product_spinner = Spinner(
-            text="Selecione um produto" if product_options else "Nenhum produto disponível",
-            values=product_options,
-            size_hint_x=0.75,
-            font_size=self.get_responsive_font_size(12)
-        )
-        self.product_spinner.bind(text=self.on_product_select)
-        product_layout.add_widget(self.product_spinner)
-        
-        # Informações do produto selecionado
-        info_layout = GridLayout(
-            cols=2, 
-            size_hint_y=None, 
-            height=self.get_responsive_height(80), 
-            spacing=dp(5)
-        )
-        
-        # Labels de informação
-        info_labels = [
-            ("Estoque:", "stock_label", ""),
-            ("Preço:", "price_label", "0.00 MZN")
-        ]
-        
-        for label_text, attr_name, default_text in info_labels:
-            info_layout.add_widget(Label(
-                text=label_text, 
-                halign='left',
-                font_size=self.get_responsive_font_size(12)
-            ))
-            label = Label(
-                text=default_text, 
-                halign='left',
-                font_size=self.get_responsive_font_size(12)
-            )
-            setattr(self, attr_name, label)
-            info_layout.add_widget(label)
-        
-        # Quantidade a adicionar
-        quantity_layout = BoxLayout(
-            size_hint_y=None, 
-            height=self.get_responsive_height(50), 
-            spacing=dp(10)
-        )
-        
-        quantity_label = Label(
-            text="Quantidade:", 
-            size_hint_x=0.4,
-            font_size=self.get_responsive_font_size(12)
-        )
-        quantity_layout.add_widget(quantity_label)
-        
-        self.quantity_input = TextInput(
-            hint_text="00", 
-            input_filter="int", 
-            multiline=False, 
-            size_hint_x=0.3,
-            font_size=self.get_responsive_font_size(12)
-        )
-        quantity_layout.add_widget(self.quantity_input)
-        
-        # Botão adicionar
-        add_btn = Button(
-            text="Adicionar",
-            background_color=(0.1, 0.6, 0.2, 1),
-            color=(1, 1, 1, 1),
-            size_hint_x=0.3,
-            font_size=self.get_responsive_font_size(12)
-        )
-        add_btn.bind(on_release=self.add_to_cart)
-        quantity_layout.add_widget(add_btn)
-        
-        # Adicionar todos os componentes
-        left_layout.add_widget(search_layout)
-        left_layout.add_widget(product_layout)
-        left_layout.add_widget(info_layout)
-        left_layout.add_widget(quantity_layout)
-        
-        # Espaço flexível apenas em telas grandes
-        if Window.width >= 800:
-            left_layout.add_widget(BoxLayout())
-        
-        return left_layout
-    
-    def create_cart_layout(self):
-        """Criar layout do carrinho e finalização"""
-        right_layout = BoxLayout(
-            orientation='vertical', 
-            spacing=dp(8)
-        )
-        
-        # Título do carrinho
-        cart_title = Label(
-            text="Carrinho de Compras",
-            font_size=self.get_responsive_font_size(18),
-            bold=True,
-            size_hint_y=None,
-            height=self.get_responsive_height(40)
-        )
-        right_layout.add_widget(cart_title)
-        
-        # ScrollView para lista de itens - altura responsiva
-        scroll_height = 0.4 if Window.width >= 800 else 0.3
-        scroll = ScrollView(size_hint=(1, scroll_height))
-        
-        self.cart_layout = BoxLayout(
-            orientation='vertical',
-            spacing=dp(3),
-            size_hint_y=None
-        )
-        self.cart_layout.bind(minimum_height=self.cart_layout.setter('height'))
-        scroll.add_widget(self.cart_layout)
-        right_layout.add_widget(scroll)
-        
-        # Total da venda
-        total_layout = BoxLayout(
-            size_hint_y=None, 
-            height=self.get_responsive_height(50)
-        )
-        
-        total_label = Label(
-            text="TOTAL:", 
-            font_size=self.get_responsive_font_size(16), 
-            bold=True,
-            size_hint_x=0.5
-        )
-        total_layout.add_widget(total_label)
-        
-        self.total_display = Label(
-            text="0.00 MZN", 
-            font_size=self.get_responsive_font_size(16), 
-            bold=True,
-            size_hint_x=0.5
-        )
-        total_layout.add_widget(self.total_display)
-        
-        # Seção de pagamento
-        payment_section = self.create_payment_section()
-        
-        # Botões finais
-        button_layout = self.create_final_buttons()
-        
-        right_layout.add_widget(total_layout)
-        right_layout.add_widget(payment_section)
-        right_layout.add_widget(button_layout)
-        
-        return right_layout
-    
-    def create_payment_section(self):
-        """Criar seção de pagamento"""
-        payment_layout = BoxLayout(
-            orientation='vertical', 
-            spacing=dp(5), 
-            size_hint_y=None, 
-            height=self.get_responsive_height(100)
-        )
-        
-        # Valor pago
-        payment_row = BoxLayout(
-            size_hint_y=None, 
-            height=self.get_responsive_height(35)
-        )
-        
-        payment_label = Label(
-            text="Valor Pago:", 
-            size_hint_x=0.4,
-            font_size=self.get_responsive_font_size(12)
-        )
-        payment_row.add_widget(payment_label)
-        
-        self.payment_input = TextInput( 
-            hint_text="0.00 MZN",
-            input_filter="float", 
-            multiline=False, 
-            size_hint_x=0.6,
-            font_size=self.get_responsive_font_size(12)
-        )
-        self.payment_input.bind(text=self.calculate_change)
-        payment_row.add_widget(self.payment_input)
-        
-        # Troco
-        change_row = BoxLayout(
-            size_hint_y=None, 
-            height=self.get_responsive_height(35)
-        )
-        
-        change_label = Label(
-            text="Troco:", 
-            size_hint_x=0.4,
-            font_size=self.get_responsive_font_size(12)
-        )
-        change_row.add_widget(change_label)
-        
-        self.change_label = Label(
-            text="0.00 MZN", 
-            size_hint_x=0.6, 
-            bold=True,
-            font_size=self.get_responsive_font_size(12)
-        )
-        change_row.add_widget(self.change_label)
-        
-        payment_layout.add_widget(payment_row)
-        payment_layout.add_widget(change_row)
-        
-        return payment_layout
-    
-    def create_final_buttons(self):
-        """Criar botões finais"""
-        screen_width = Window.width
-        
-        # Layout dos botões - empilhar verticalmente em telas pequenas
-        if screen_width < 600:
-            button_layout = BoxLayout(
-                orientation='vertical',
-                spacing=dp(5), 
-                size_hint_y=None, 
-                height=self.get_responsive_height(160)  # 4 botões * 40
-            )
-        else:
-            button_layout = BoxLayout(
-                spacing=dp(8), 
-                size_hint_y=None, 
-                height=self.get_responsive_height(50)
-            )
-        
-        # Definir botões
-        buttons = [
-            ("Finalizar Venda", (0.1, 0.6, 0.2, 1), self.confirm_sale),
-            ("Imprimir", (0.2, 0.4, 0.8, 1), self.print_receipt),
-            ("Limpar", (0.8, 0.5, 0.1, 1), self.clear_cart),
-            ("Cancelar", (0.7, 0.7, 0.7, 1), self.dismiss)
-        ]
-        
-        for text, color, callback in buttons:
-            btn = Button(
-                text=text,
-                background_color=color,
-                color=(1, 1, 1, 1),
-                font_size=self.get_responsive_font_size(12)
-            )
-            btn.bind(on_release=callback)
-            button_layout.add_widget(btn)
-        
-        return button_layout
-    
-    def filter_products(self, instance, text):
-        """Filtrar produtos baseado no texto de pesquisa"""
-        if not text:
-            self.product_spinner.values = [f"{p[0]} - {p[1]}" for p in self.products]
-            return
-        
-        filtered_products = [
-            f"{p[0]} - {p[1]}" for p in self.products 
-            if text.lower() in p[1].lower() or text.lower() in str(p[0]).lower()
-        ]
-        
-        self.product_spinner.values = filtered_products
-        if filtered_products:
-            self.product_spinner.text = filtered_products[0]
-            self.on_product_select(self.product_spinner, filtered_products[0])
-    
-    def on_product_select(self, spinner, text):
-        """Atualizar informações quando um produto é selecionado"""
-        if text in self.product_dict:
-            self.selected_product = self.product_dict[text]
-            self.stock_label.text = str(self.selected_product[2])
-            self.price_label.text = f"{self.selected_product[3]:.2f} MZN"
-    
-    def add_to_cart(self, instance):
-        """Adicionar produto ao carrinho"""
-        if not hasattr(self, 'selected_product') or not self.selected_product:
-            self.manager_screen.show_popup("Erro", "Por favor, selecione um produto.")
-            return
-        
-        try:
-            quantity = int(self.quantity_input.text) if self.quantity_input.text else 0
-            
-            if quantity <= 0:
-                self.manager_screen.show_popup("Erro", "A quantidade deve ser maior que zero.")
-                return
-            
-            if quantity > self.selected_product[2]:
-                self.manager_screen.show_popup("Erro", "Quantidade maior que o estoque disponível.")
-                return
-            
-            # Verificar se o produto já está no carrinho
-            existing_item = None
-            for item in self.sale_items:
-                if item['product_id'] == self.selected_product[0]:
-                    existing_item = item
-                    break
-            
-            if existing_item:
-                # Verificar se a nova quantidade total não excede o estoque
-                new_total_qty = existing_item['quantity'] + quantity
-                if new_total_qty > self.selected_product[2]:
-                    self.manager_screen.show_popup("Erro", 
-                        f"Quantidade total ({new_total_qty}) excede o estoque disponível ({self.selected_product[2]}).")
-                    return
-                
-                # Atualizar quantidade do item existente
-                existing_item['quantity'] = new_total_qty
-                existing_item['total'] = existing_item['quantity'] * existing_item['price']
-            else:
-                # Adicionar novo item
-                item = {
-                    'product_id': self.selected_product[0],
-                    'name': self.selected_product[1],
-                    'quantity': quantity,
-                    'price': self.selected_product[3],
-                    'total': quantity * self.selected_product[3]
-                }
-                self.sale_items.append(item)
-            
-            self.update_cart_display()
-            self.quantity_input.text = "1"  # Reset quantidade
-            
-        except ValueError:
-            self.manager_screen.show_popup("Erro", "Por favor, insira uma quantidade válida.")
-    
-    def update_cart_display(self):
-        """Atualizar display do carrinho"""
-        self.cart_layout.clear_widgets()
-        self.sale_total = 0.0
-        
-        for i, item in enumerate(self.sale_items):
-            item_layout = BoxLayout(
-                orientation='horizontal',
-                size_hint_y=None,
-                height=self.get_responsive_height(35),
-                spacing=dp(3)
-            )
-            
-            # Ajustar tamanho do nome baseado no tamanho da tela
-            name_max_chars = 15 if Window.width < 600 else 25
-            
-            # Nome do produto
-            name_label = Label(
-                text=item['name'][:name_max_chars] + "..." if len(item['name']) > name_max_chars else item['name'],
-                size_hint_x=0.4,
-                text_size=(None, None),
-                halign='left',
-                font_size=self.get_responsive_font_size(10)
-            )
-            
-            # Quantidade e preço
-            qty_price_label = Label(
-                text=f"{item['quantity']} x {item['price']:.2f}",
-                size_hint_x=0.3,
-                font_size=self.get_responsive_font_size(10)
-            )
-            
-            # Total do item
-            total_label = Label(
-                text=f"{item['total']:.2f}",
-                size_hint_x=0.2,
-                font_size=self.get_responsive_font_size(10)
-            )
-            
-            # Botão remover
-            remove_btn = Button(
-                text="X",
-                size_hint_x=0.1,
-                background_color=(0.8, 0.2, 0.2, 1),
-                color=(1, 1, 1, 1),
-                font_size=self.get_responsive_font_size(10)
-            )
-            remove_btn.bind(on_release=lambda x, idx=i: self.remove_from_cart(idx))
-            
-            item_layout.add_widget(name_label)
-            item_layout.add_widget(qty_price_label)
-            item_layout.add_widget(total_label)
-            item_layout.add_widget(remove_btn)
-            
-            self.cart_layout.add_widget(item_layout)
-            self.sale_total += item['total']
-        
-        self.total_display.text = f"{self.sale_total:.2f} MZN"
-        self.calculate_change()
-    
-    def remove_from_cart(self, index):
-        """Remover item do carrinho"""
-        if 0 <= index < len(self.sale_items):
-            self.sale_items.pop(index)
-            self.update_cart_display()
-    
-    def clear_cart(self, instance):
-        """Limpar todo o carrinho"""
-        self.sale_items.clear()
-        self.update_cart_display()
-    
-    def calculate_change(self, *args):
-        """Calcular o troco"""
-        try:
-            payment = float(self.payment_input.text) if self.payment_input.text else 0
-            change = payment - self.sale_total
-            if change >= 0:
-                self.change_label.text = f"{change:.2f} MZN"
-            else:
-                self.change_label.text = "Pagamento insuficiente"
-        except ValueError:
-            self.change_label.text = "0.00 MZN"
-    
-    def confirm_sale(self, instance):
-        """Confirmar e registrar a venda"""
-        if not self.sale_items:
-            self.manager_screen.show_popup("Erro", "Carrinho vazio. Adicione produtos à venda.")
-            return
-        
-        # Verificar pagamento
-        try:
-            payment = float(self.payment_input.text) if self.payment_input.text else 0
-            if payment < self.sale_total:
-                self.manager_screen.show_popup("Erro", "Pagamento insuficiente para concluir a venda.")
-                return
-        except ValueError:
-            self.manager_screen.show_popup("Erro", "Por favor, insira um valor de pagamento válido.")
-            return
-        
-        # Registrar cada item da venda
-        db = Database()
-        sale_success = True
-        
-        try:
-            # Aqui você pode criar uma venda principal e depois os itens
-            # Assumindo que você tem um método para vendas com múltiplos itens
-            for item in self.sale_items:
-                sale_id = db.add_sale(item['product_id'], item['quantity'], item['price'])
-                if not sale_id:
-                    sale_success = False
-                    break
-                elif not self.sale_id:  # Usar o primeiro ID como referência
-                    self.sale_id = sale_id
-            
-            if sale_success:
-                self.manager_screen.load_sales()
-                self.manager_screen.show_popup("Sucesso", "Venda registrada com sucesso!")
-                # Manter popup aberto para permitir impressão
-            else:
-                self.manager_screen.show_popup("Erro", "Erro ao registrar alguns itens da venda!")
-                
-        except Exception as e:
-            self.manager_screen.show_popup("Erro", f"Erro ao processar venda: {str(e)}")
-    
-    def print_receipt(self, instance):
-        """Gerar e imprimir fatura"""
-        if not self.sale_items:
-            self.manager_screen.show_popup("Erro", "Nenhuma venda para imprimir.")
-            return
-        
-        # Criar popup da fatura com tamanho responsivo
-        receipt_popup = Popup(
-            title="Fatura",
-            size_hint=(0.8, 0.9) if Window.width < 800 else (0.5, 0.8),
-            pos_hint={'center_x': 0.5, 'center_y': 0.5},
-            auto_dismiss=True
-        )
-        
-        receipt_layout = BoxLayout(
-            orientation='vertical', 
-            padding=dp(10), 
-            spacing=dp(5)
-        )
-        
-        # Cabeçalho
-        receipt_layout.add_widget(Label(
-            text="FATURA DE VENDA",
-            font_size=self.get_responsive_font_size(18),
-            bold=True,
-            size_hint_y=None,
-            height=self.get_responsive_height(30)
-        ))
-        
-        receipt_layout.add_widget(Label(
-            text=f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
-            size_hint_y=None,
-            height=self.get_responsive_height(20),
-            font_size=self.get_responsive_font_size(12)
-        ))
-        
-        if self.sale_id:
-            receipt_layout.add_widget(Label(
-                text=f"Venda Nº: {self.sale_id}",
-                size_hint_y=None,
-                height=self.get_responsive_height(20),
-                font_size=self.get_responsive_font_size(12)
-            ))
-        
-        # Linha separadora
-        receipt_layout.add_widget(Label(
-            text="=" * 40,
-            size_hint_y=None,
-            height=self.get_responsive_height(20),
-            font_size=self.get_responsive_font_size(12)
-        ))
-        
-        # ScrollView para itens da venda
-        items_scroll = ScrollView(size_hint=(1, 0.5))
-        items_layout = BoxLayout(
-            orientation='vertical',
-            spacing=dp(2),
-            size_hint_y=None
-        )
-        items_layout.bind(minimum_height=items_layout.setter('height'))
-        
-        # Itens da venda
-        for item in self.sale_items:
-            items_layout.add_widget(Label(
-                text=f"{item['name']}",
-                size_hint_y=None,
-                height=self.get_responsive_height(20),
-                text_size=(300, None),
-                halign='left',
-                font_size=self.get_responsive_font_size(11)
-            ))
-            items_layout.add_widget(Label(
-                text=f"{item['quantity']} x {item['price']:.2f} = {item['total']:.2f} MZN",
-                size_hint_y=None,
-                height=self.get_responsive_height(20),
-                font_size=self.get_responsive_font_size(11)
-            ))
-        
-        items_scroll.add_widget(items_layout)
-        receipt_layout.add_widget(items_scroll)
-        
-        # Linha separadora
-        receipt_layout.add_widget(Label(
-            text="=" * 40,
-            size_hint_y=None,
-            height=self.get_responsive_height(20),
-            font_size=self.get_responsive_font_size(12)
-        ))
-        
-        # Totais
-        payment = float(self.payment_input.text) if self.payment_input.text else 0
-        change = payment - self.sale_total
-        
-        totals_info = [
-            (f"TOTAL: {self.sale_total:.2f} MZN", True, 25),
-            (f"Valor Pago: {payment:.2f} MZN", False, 20),
-            (f"Troco: {change:.2f} MZN", True, 20),
-            ("Obrigado pela preferência!", False, 30)
-        ]
-        
-        for text, is_bold, height in totals_info:
-            receipt_layout.add_widget(Label(
-                text=text,
-                size_hint_y=None,
-                height=self.get_responsive_height(height),
-                bold=is_bold,
-                font_size=self.get_responsive_font_size(12)
-            ))
-        
-        # Botões
-        btn_layout = BoxLayout(
-            size_hint_y=None, 
-            height=self.get_responsive_height(40), 
-            spacing=dp(10)
-        )
-        
-        print_btn = Button(
-            text="Imprimir", 
-            size_hint_x=0.5,
-            font_size=self.get_responsive_font_size(12)
-        )
-        print_btn.bind(on_release=lambda x: self.manager_screen.show_popup(
-            "Impressão", "Enviando para impressora...", timeout=2
-        ))
-        
-        close_btn = Button(
-            text="Fechar", 
-            size_hint_x=0.5,
-            font_size=self.get_responsive_font_size(12)
-        )
-        close_btn.bind(on_release=receipt_popup.dismiss)
-        
-        btn_layout.add_widget(print_btn)
-        btn_layout.add_widget(close_btn)
-        
-        receipt_layout.add_widget(btn_layout)
-        receipt_popup.content = receipt_layout
-        receipt_popup.open()            
-   
+from datetime import datetime
+import cv2
+from pyzbar.pyzbar import decode
+import numpy as np
 
 
-from kivy.uix.screenmanager import Screen
-from kivy.uix.gridlayout import GridLayout
-from kivy.uix.label import Label
-from kivy.uix.button import Button
-from kivy.uix.textinput import TextInput
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.popup import Popup
-from kivy.uix.scrollview import ScrollView
-from kivy.properties import ObjectProperty
-from kivy.graphics import Color, Rectangle
-from kivy.clock import Clock
-from datetime import datetime, timedelta
-
-class ManagerScreen(Screen):
-    sales_table = ObjectProperty(None)
-    
+class ModernSalesScreen(Screen):
     def __init__(self, **kwargs):
-        super(ManagerScreen, self).__init__(**kwargs)
+        super(ModernSalesScreen, self).__init__(**kwargs)
         self.db = Database()
-        self.current_filter_date = None
+        self.cart_items = []
+        self.total_amount = 0.0
+        self.products_dict = {}
+        self.scanning = False
+        self.camera_active = False
+        self.current_camera = 0
         
-    def on_enter(self):
-        # Sempre carregar vendas de hoje ao entrar na tela
-        today_str = datetime.now().strftime("%d/%m/%Y")
-        self.current_filter_date = today_str
-        self.load_sales(today_str)
-        
-    def load_sales(self, filter_date=None):
-        """Carregar vendas na tabela com filtro opcional por data e agrupamento por produto"""
-        self.sales_table.clear_widgets()
-        
-        # Atualizar filtro atual
-        if filter_date:
-            self.current_filter_date = filter_date
-        
-        # Configurar o GridLayout como uma tabela fixa
-        self.sales_table.cols = 5
-        self.sales_table.rows = 1  # Inicialmente apenas cabeçalho
-        self.sales_table.size_hint_y = None
-        self.sales_table.spacing = 2
-        self.sales_table.padding = 10
-        
-        # Adicionar cabeçalhos
-        self.add_table_headers()
-        
-        # Buscar vendas do banco de dados
-        if self.current_filter_date:
-            sales = self.db.get_sales_by_date(self.current_filter_date)
-        else:
-            sales = self.db.get_all_sales()
-        
-        # Verificar se há vendas
-        if not sales:
-            self.add_no_sales_row()
-            return
-        
-        # Agrupar vendas por produto
-        grouped_sales = self.group_sales_by_product(sales)
-        
-        # Adicionar vendas agrupadas à tabela
-        for i, (product_name, data) in enumerate(grouped_sales.items()):
-            self.add_sales_row(product_name, data, i % 2 == 0)
-        
-        # Ajustar altura da tabela
-        self.adjust_table_height()
+        self.create_ui()
+        Clock.schedule_once(lambda dt: self.load_products(), 0.1)
+        Clock.schedule_once(lambda dt: self.test_barcode_database(), 0.2)
     
-    def add_table_headers(self):
-        """Adicionar cabeçalhos da tabela"""
-        headers = ["Produto", "Qtd. Total", "Preço Unit.", "Total", "Última Venda"]
-        header_colors = (0.2, 0.4, 0.6, 1)  # Azul escuro
-        
-        for header in headers:
-            header_label = Label(
-                text=header,
-                size_hint_y=None,
-                height=50,
-                bold=True,
-                color=(1, 1, 1, 1),
-                text_size=(None, None),
-                halign='center',
-                valign='middle'
-            )
+    def test_barcode_database(self):
+        """Teste: verificar produtos com código de barras no banco"""
+        try:
+            print("\n" + "="*70)
+            print("🧪 TESTE - Produtos com Código de Barras")
+            print("="*70)
             
-            # Adicionar fundo colorido
-            with header_label.canvas.before:
-                Color(*header_colors)
-                Rectangle(pos=header_label.pos, size=header_label.size)
+            self.db.cursor.execute("""
+                SELECT id, description, barcode, existing_stock
+                FROM products
+                WHERE barcode IS NOT NULL AND barcode != ''
+                ORDER BY id
+            """)
             
-            header_label.bind(pos=lambda instance, value, color=header_colors: 
-                            self.update_cell_bg(instance, value, color))
-            header_label.bind(size=lambda instance, value, color=header_colors: 
-                            self.update_cell_bg(instance, value, color))
+            produtos = self.db.cursor.fetchall()
             
-            self.sales_table.add_widget(header_label)
-        
-        # Incrementar número de linhas
-        self.sales_table.rows += 1
+            if produtos:
+                print(f"✅ {len(produtos)} produto(s) com código de barras:\n")
+                for p in produtos:
+                    print(f"   ID: {p[0]:4d} | Barcode: '{p[2]:15s}' | {p[1]:30s} | Estoque: {p[3]}")
+            else:
+                print("⚠️ NENHUM produto possui código de barras!")
+                print("   Cadastre produtos com códigos de barras antes de usar o scanner.")
+            
+            print("="*70 + "\n")
+            
+        except Exception as e:
+            print(f"❌ Erro no teste: {e}")
+            import traceback
+            traceback.print_exc()
     
-    def add_no_sales_row(self):
-        """Adicionar linha quando não há vendas"""
-        no_sales_label = Label(
-            text="Nenhuma venda encontrada",
-            size_hint_y=None,
-            height=50,
-            italic=True,
-            color=(0.7, 0.7, 0.7, 1),
-            text_size=(None, None),
-            halign='center',
+    def create_ui(self):
+        """Criar interface moderna"""
+        main_layout = BoxLayout(orientation='vertical', padding=0, spacing=0)
+        
+        # Background
+        with main_layout.canvas.before:
+            Color(0.94, 0.94, 0.94, 1)
+            self.bg_rect = Rectangle(pos=main_layout.pos, size=main_layout.size)
+        main_layout.bind(pos=self._update_bg, size=self._update_bg)
+        
+        # Header
+        header = self.create_header()
+        main_layout.add_widget(header)
+        
+        # Main Content (3 colunas)
+        content = BoxLayout(orientation='horizontal', padding=[15, 10], spacing=12)
+        
+        # Coluna 1: Pesquisa e Produtos (36%)
+        left_col = self.create_products_column()
+        left_col.size_hint_x = 0.36
+        
+        # Coluna 2: Carrinho (42%)
+        middle_col = self.create_cart_column()
+        middle_col.size_hint_x = 0.42
+        
+        # Coluna 3: Scanner e Pagamento (22%)
+        right_col = self.create_right_column()
+        right_col.size_hint_x = 0.22
+        
+        content.add_widget(left_col)
+        content.add_widget(middle_col)
+        content.add_widget(right_col)
+        
+        main_layout.add_widget(content)
+        self.add_widget(main_layout)
+    
+    def _update_bg(self, instance, value):
+        self.bg_rect.pos = instance.pos
+        self.bg_rect.size = instance.size
+    
+    def create_header(self):
+        """Criar cabeçalho moderno"""
+        header = BoxLayout(
+            orientation='horizontal',
+            size_hint_y=0.09,
+            padding=[18, 6],
+            spacing=20
+        )
+        
+        with header.canvas.before:
+            Color(0.22, 0.32, 0.52, 1)
+            self.header_rect = Rectangle(pos=header.pos, size=header.size)
+        header.bind(pos=self._update_header, size=self._update_header)
+        
+        # Título
+        title = Label(
+            text='💰 SISTEMA DE VENDAS',
+            font_size='24sp',
+            bold=True,
+            color=[1, 1, 1, 1],
+            size_hint_x=0.5,
+            halign='left',
             valign='middle'
         )
+        title.bind(size=lambda s, v: setattr(s, 'text_size', (s.width, None)))
         
-        # Adicionar célula que ocupa toda a largura
-        self.sales_table.add_widget(no_sales_label)
+        # Info do usuário
+        info_box = BoxLayout(orientation='vertical', size_hint_x=0.3)
+        info_box.add_widget(Label(
+            text=f'📅 {datetime.now().strftime("%d/%m/%Y")}',
+            color=[1, 1, 1, 1],
+            font_size='12sp'
+        ))
+        info_box.add_widget(Label(
+            text=f'🕐 {datetime.now().strftime("%H:%M")}',
+            color=[1, 1, 1, 1],
+            font_size='12sp'
+        ))
         
-        # Adicionar células vazias para completar a linha
-        for _ in range(4):
-            empty_cell = Label(
-                text="",
-                size_hint_y=None,
-                height=50
-            )
-            self.sales_table.add_widget(empty_cell)
-        
-        self.sales_table.rows += 1
-        self.adjust_table_height()
-    
-    def add_sales_row(self, product_name, data, is_alternate_row=False):
-        """Adicionar uma linha de venda com formatação consistente"""
-        # Cor de fundo alternada
-        bg_color = (0.15, 0.15, 0.15, 1) if is_alternate_row else (0.1, 0.1, 0.1, 1)
-        
-        # Dados da linha
-        row_data = [
-            product_name,
-            str(data['total_quantity']),
-            f"{data['unit_price']:.2f} MZN",
-            f"{data['total_amount']:.2f} MZN",
-            self.format_date(data['last_sale_date'])
-        ]
-        
-        # Alinhamentos por coluna
-        alignments = ['left', 'center', 'right', 'right', 'center']
-        
-        for i, (text, align) in enumerate(zip(row_data, alignments)):
-            cell_label = Label(
-                text=text,
-                size_hint_y=None,
-                height=50,
-                color=(1, 1, 1, 1),
-                text_size=(None, None),
-                halign=align,
-                valign='middle'
-            )
-            
-            # Adicionar fundo colorido
-            with cell_label.canvas.before:
-                Color(*bg_color)
-                Rectangle(pos=cell_label.pos, size=cell_label.size)
-            
-            cell_label.bind(pos=lambda instance, value, color=bg_color: 
-                          self.update_cell_bg(instance, value, color))
-            cell_label.bind(size=lambda instance, value, color=bg_color: 
-                          self.update_cell_bg(instance, value, color))
-            
-            self.sales_table.add_widget(cell_label)
-        
-        # Incrementar número de linhas
-        self.sales_table.rows += 1
-    
-    def update_cell_bg(self, instance, value, color):
-        """Atualizar fundo da célula quando posição/tamanho mudar"""
-        instance.canvas.before.clear()
-        with instance.canvas.before:
-            Color(*color)
-            Rectangle(pos=instance.pos, size=instance.size)
-    
-    def adjust_table_height(self):
-        """Ajustar altura da tabela baseada no número de linhas"""
-        self.sales_table.height = self.sales_table.rows * 52  # 50 altura + 2 spacing
-    
-    def format_date(self, date_str):
-        """Formatar data para exibição mais limpa"""
-        try:
-            # Se a data contém hora, extrair apenas a data
-            if ' ' in date_str:
-                date_part = date_str.split(' ')[0]
-                time_part = date_str.split(' ')[1]
-                return f"{date_part} {time_part[:5]}"  # Mostrar apenas HH:MM
-            return date_str
-        except:
-            return date_str
-    
-    def group_sales_by_product(self, sales):
-        """Agrupar vendas por produto, somando quantidades e totais"""
-        grouped = {}
-        
-        for sale in sales:
-            product_name = sale[1]  # Nome do produto
-            quantity = sale[2]      # Quantidade
-            unit_price = sale[3]    # Preço unitário
-            total = sale[4]         # Total
-            sale_date = sale[5]     # Data da venda
-            
-            if product_name not in grouped:
-                grouped[product_name] = {
-                    'total_quantity': 0,
-                    'total_amount': 0,
-                    'unit_price': unit_price,
-                    'last_sale_date': sale_date
-                }
-            
-            # Somar quantidade e total
-            grouped[product_name]['total_quantity'] += quantity
-            grouped[product_name]['total_amount'] += total
-            
-            # Manter o preço unitário e data mais recentes
-            if sale_date > grouped[product_name]['last_sale_date']:
-                grouped[product_name]['unit_price'] = unit_price
-                grouped[product_name]['last_sale_date'] = sale_date
-        
-        # Ordenar por nome do produto
-        return dict(sorted(grouped.items()))
-    
-    def show_date_filter(self):
-        """Mostrar popup melhorado para filtrar por data"""
-        content = BoxLayout(orientation='vertical', spacing=15, padding=20)
-        
-        # Título com melhor estilo
-        title_label = Label(
-            text="Filtrar Vendas por Data",
-            size_hint_y=None,
-            height=50,
-            font_size=20,
+        # Botão Voltar
+        btn_voltar = Button(
+            text='← VOLTAR',
+            size_hint_x=0.2,
+            background_color=[0.85, 0.22, 0.22, 1],
+            background_normal='',
             bold=True,
-            color=(0.2, 0.4, 0.6, 1)
+            font_size='14sp'
         )
-        content.add_widget(title_label)
+        btn_voltar.bind(on_release=self.go_back)
         
-        # Informação atual
-        current_info = Label(
-            text=f"Filtro atual: {self.current_filter_date or 'Todas as datas'}",
+        header.add_widget(title)
+        header.add_widget(info_box)
+        header.add_widget(btn_voltar)
+        
+        return header
+    
+    def _update_header(self, instance, value):
+        self.header_rect.pos = instance.pos
+        self.header_rect.size = instance.size
+    
+    def create_products_column(self):
+        """Coluna de produtos redesenhada"""
+        col = BoxLayout(orientation='vertical', spacing=8)
+        
+        # Card de pesquisa ÚNICO com busca por nome/ID/código
+        search_card = BoxLayout(
+            orientation='vertical',
             size_hint_y=None,
-            height=35,
-            font_size=14,
-            color=(0.6, 0.6, 0.6, 1)
+            height=dp(105),
+            padding=10,
+            spacing=6
         )
-        content.add_widget(current_info)
+        with search_card.canvas.before:
+            Color(1, 1, 1, 1)
+            self.search_card_rect = RoundedRectangle(
+                pos=search_card.pos,
+                size=search_card.size,
+                radius=[10]
+            )
+        search_card.bind(pos=self._update_search_card, size=self._update_search_card)
         
-        # Campo de data com melhor layout
-        date_container = BoxLayout(orientation='vertical', size_hint_y=None, height=80, spacing=5)
-        
-        date_label = Label(
-            text="Selecione a data:",
+        search_title = Label(
+            text='🔍 PESQUISAR',
             size_hint_y=None,
-            height=30,
-            font_size=14,
-            color=(0.8, 0.8, 0.8, 1),
-            halign='left'
+            height=24,
+            bold=True,
+            font_size='14sp',
+            color=[0.2, 0.2, 0.2, 1]
         )
-        date_label.text_size = (date_label.width, None)
-        date_label.bind(size=lambda instance, value: setattr(instance, 'text_size', (instance.width, None)))
         
-        date_input = TextInput(
-            text=self.current_filter_date or datetime.now().strftime("%d/%m/%Y"),
+        # Input único que aceita nome, ID ou código de barras
+        self.search_input = TextInput(
+            hint_text='Nome, ID ou Código de Barras...',
             multiline=False,
             size_hint_y=None,
-            height=45,
-            font_size=16,
-            hint_text="DD/MM/AAAA",
-            background_color=(0.9, 0.9, 0.9, 1),
-            foreground_color=(0.1, 0.1, 0.1, 1)
+            height=40,
+            font_size='14sp',
+            padding=[10, 10],
+            background_color=[0.97, 0.97, 0.97, 1],
+            foreground_color=[0.2, 0.2, 0.2, 1]
+        )
+        self.search_input.bind(text=self.on_search)
+        self.search_input.bind(on_text_validate=self.on_search_enter)
+        
+        search_card.add_widget(search_title)
+        search_card.add_widget(self.search_input)
+        
+        # Card de produtos
+        products_card = BoxLayout(orientation='vertical', spacing=6, padding=10)
+        with products_card.canvas.before:
+            Color(1, 1, 1, 1)
+            self.products_card_rect = RoundedRectangle(
+                pos=products_card.pos,
+                size=products_card.size,
+                radius=[10]
+            )
+        products_card.bind(pos=self._update_products_card, size=self._update_products_card)
+        
+        # Header
+        products_header = BoxLayout(size_hint_y=None, height=28, spacing=6)
+        products_title = Label(
+            text='📦 PRODUTOS',
+            bold=True,
+            font_size='14sp',
+            color=[0.2, 0.2, 0.2, 1],
+            halign='left',
+            size_hint_x=0.65
+        )
+        products_title.bind(size=lambda s, v: setattr(s, 'text_size', (s.width, None)))
+        
+        self.products_count_label = Label(
+            text='0 itens',
+            font_size='11sp',
+            color=[0.5, 0.5, 0.5, 1],
+            size_hint_x=0.35,
+            halign='right'
+        )
+        self.products_count_label.bind(size=lambda s, v: setattr(s, 'text_size', (s.width, None)))
+        
+        products_header.add_widget(products_title)
+        products_header.add_widget(self.products_count_label)
+        
+        # Scroll de produtos
+        scroll = ScrollView()
+        self.products_list = BoxLayout(
+            orientation='vertical',
+            spacing=5,
+            size_hint_y=None,
+            padding=[3, 3]
+        )
+        self.products_list.bind(minimum_height=self.products_list.setter('height'))
+        scroll.add_widget(self.products_list)
+        
+        products_card.add_widget(products_header)
+        products_card.add_widget(scroll)
+        
+        col.add_widget(search_card)
+        col.add_widget(products_card)
+        
+        return col
+    
+    def _update_search_card(self, instance, value):
+        self.search_card_rect.pos = instance.pos
+        self.search_card_rect.size = instance.size
+    
+    def _update_products_card(self, instance, value):
+        self.products_card_rect.pos = instance.pos
+        self.products_card_rect.size = instance.size
+    
+    def create_cart_column(self):
+        """Coluna do carrinho"""
+        col = BoxLayout(orientation='vertical', spacing=6, padding=10)
+        
+        with col.canvas.before:
+            Color(1, 1, 1, 1)
+            self.cart_col_rect = RoundedRectangle(
+                pos=col.pos,
+                size=col.size,
+                radius=[10]
+            )
+        col.bind(pos=self._update_cart_col, size=self._update_cart_col)
+        
+        # Header
+        cart_header = BoxLayout(size_hint_y=None, height=40, spacing=8, padding=[0, 3])
+        
+        header_left = BoxLayout(orientation='vertical', size_hint_x=0.72)
+        header_left.add_widget(Label(
+            text='🛒 CARRINHO',
+            bold=True,
+            font_size='16sp',
+            color=[0.2, 0.2, 0.2, 1],
+            halign='left',
+            size_hint_y=0.6
+        ))
+        self.cart_count_label = Label(
+            text='0 itens',
+            font_size='10sp',
+            color=[0.5, 0.5, 0.5, 1],
+            halign='left',
+            size_hint_y=0.4
+        )
+        self.cart_count_label.bind(size=lambda s, v: setattr(s, 'text_size', (s.width, None)))
+        header_left.add_widget(self.cart_count_label)
+        
+        clear_btn = Button(
+            text='🗑️',
+            size_hint_x=0.28,
+            background_color=[0.88, 0.28, 0.28, 1],
+            background_normal='',
+            bold=True,
+            font_size='17sp'
+        )
+        clear_btn.bind(on_release=self.clear_cart)
+        
+        cart_header.add_widget(header_left)
+        cart_header.add_widget(clear_btn)
+        
+        # Tabela header
+        table_header = GridLayout(
+            cols=5,
+            size_hint_y=None,
+            height=32,
+            spacing=1,
+            padding=[1, 1]
         )
         
-        date_container.add_widget(date_label)
-        date_container.add_widget(date_input)
-        content.add_widget(date_container)
+        headers = [
+            ('ID', 0.11),
+            ('Produto', 0.39),
+            ('Quantidade', 0.17),
+            ('Total', 0.23),
+            ('Del', 0.10)
+        ]
         
-        # Botões organizados em grid
-        button_container = BoxLayout(orientation='vertical', size_hint_y=None, height=130, spacing=10)
+        for h, width in headers:
+            lbl = Label(
+                text=h,
+                bold=True,
+                color=[1, 1, 1, 1],
+                font_size='12sp',
+                size_hint_x=width
+            )
+            with lbl.canvas.before:
+                Color(0.26, 0.36, 0.56, 1)
+                lbl_rect = RoundedRectangle(pos=lbl.pos, size=lbl.size, radius=[4])
+            lbl.bind(size=lambda s, v, r=lbl_rect: setattr(r, 'size', s.size))
+            lbl.bind(pos=lambda s, v, r=lbl_rect: setattr(r, 'pos', s.pos))
+            table_header.add_widget(lbl)
         
-        # Primeira linha de botões
-        button_row1 = BoxLayout(orientation='horizontal', size_hint_y=None, height=50, spacing=10)
+        # Scroll
+        scroll = ScrollView()
+        self.cart_list = GridLayout(
+            cols=5,
+            spacing=1,
+            size_hint_y=None,
+            padding=[1, 1]
+        )
+        self.cart_list.bind(minimum_height=self.cart_list.setter('height'))
+        scroll.add_widget(self.cart_list)
         
-        filter_btn = Button(
-            text="Aplicar Filtro",
-            background_color=(0.2, 0.7, 0.2, 1),
-            font_size=14,
+        # Total
+        total_box = BoxLayout(
+            size_hint_y=None,
+            height=65,
+            padding=[6, 8],
+            spacing=12
+        )
+        with total_box.canvas.before:
+            Color(0.16, 0.66, 0.26, 1)
+            self.total_box_rect = RoundedRectangle(
+                pos=total_box.pos,
+                size=total_box.size,
+                radius=[8]
+            )
+        total_box.bind(pos=self._update_total_box, size=self._update_total_box)
+        
+        total_box.add_widget(Label(
+            text='TOTAL:',
+            bold=True,
+            font_size='19sp',
+            color=[1, 1, 1, 1]
+        ))
+        self.total_label = Label(
+            text='0.00 MZN',
+            bold=True,
+            font_size='24sp',
+            color=[1, 1, 1, 1]
+        )
+        total_box.add_widget(self.total_label)
+        
+        col.add_widget(cart_header)
+        col.add_widget(table_header)
+        col.add_widget(scroll)
+        col.add_widget(total_box)
+        
+        return col
+    
+    def _update_cart_col(self, instance, value):
+        self.cart_col_rect.pos = instance.pos
+        self.cart_col_rect.size = instance.size
+    
+    def _update_total_box(self, instance, value):
+        self.total_box_rect.pos = instance.pos
+        self.total_box_rect.size = instance.size
+    
+    def create_right_column(self):
+        """Coluna direita: Scanner + Pagamento"""
+        col = BoxLayout(orientation='vertical', spacing=8)
+        
+        # Scanner Card COMPACTO
+        scanner_card = self.create_scanner_card()
+        scanner_card.size_hint_y = 0.35
+        
+        # Payment Card
+        payment_card = self.create_payment_card()
+        payment_card.size_hint_y = 0.65
+        
+        col.add_widget(scanner_card)
+        col.add_widget(payment_card)
+        
+        return col
+    
+    def create_scanner_card(self):
+        """Scanner minimalista e funcional"""
+        card = BoxLayout(orientation='vertical', padding=8, spacing=5)
+        
+        with card.canvas.before:
+            Color(1, 1, 1, 1)
+            self.scanner_card_rect = RoundedRectangle(
+                pos=card.pos,
+                size=card.size,
+                radius=[10]
+            )
+        card.bind(pos=self._update_scanner_card, size=self._update_scanner_card)
+        
+        # Título com botão destacar
+        title_box = BoxLayout(size_hint_y=None, height=22, spacing=4)
+        title_text = Label(
+            text='📷 SCANNER',
+            bold=True,
+            font_size='13sp',
+            color=[0.2, 0.2, 0.2, 1],
+            halign='left'
+        )
+        title_text.bind(size=lambda s, v: setattr(s, 'text_size', (s.width, None)))
+        
+        self.detach_btn = Button(
+            text='⬈',
+            size_hint=(None, None),
+            size=(24, 22),
+            background_color=[0.3, 0.5, 0.7, 1],
+            background_normal='',
+            bold=True,
+            font_size='12sp',
+            color=[1, 1, 1, 1]
+        )
+        self.detach_btn.bind(on_release=self.toggle_camera_detach)
+        
+        title_box.add_widget(title_text)
+        title_box.add_widget(self.detach_btn)
+        
+        # Container da câmera MUITO MENOR
+        self.camera_container = BoxLayout(
+            size_hint_y=None,
+            height=85,
+            padding=2
+        )
+        with self.camera_container.canvas.before:
+            Color(0.89, 0.89, 0.89, 1)
+            self.camera_outer_border = RoundedRectangle(
+                pos=self.camera_container.pos,
+                size=self.camera_container.size,
+                radius=[6]
+            )
+        self.camera_container.bind(pos=self._update_camera_outer, size=self._update_camera_outer)
+        
+        camera_inner = BoxLayout(padding=0)
+        with camera_inner.canvas.before:
+            Color(0.12, 0.12, 0.12, 1)
+            self.camera_bg = RoundedRectangle(
+                pos=camera_inner.pos,
+                size=camera_inner.size,
+                radius=[5]
+            )
+        camera_inner.bind(pos=self._update_camera_bg, size=self._update_camera_bg)
+        
+        self.camera_image = Image(allow_stretch=True, keep_ratio=True)
+        camera_inner.add_widget(self.camera_image)
+        self.camera_container.add_widget(camera_inner)
+        
+        # Status ultra-compacto
+        self.scanner_status = Label(
+            text='⚫ Inativa',
+            size_hint_y=None,
+            height=20,
+            color=[0.5, 0.5, 0.5, 1],
+            font_size='10sp',
             bold=True
         )
         
-        today_btn = Button(
-            text="Hoje",
-            background_color=(0.2, 0.5, 0.8, 1),
-            font_size=14
+        # Botões em linha
+        btn_layout = BoxLayout(size_hint_y=None, height=32, spacing=4)
+        
+        self.scan_btn = Button(
+            text='▶',
+            background_color=[0.16, 0.66, 0.26, 1],
+            background_normal='',
+            bold=True,
+            font_size='14sp',
+            color=[1, 1, 1, 1]
+        )
+        self.scan_btn.bind(on_release=self.toggle_scanner)
+        
+        switch_cam_btn = Button(
+            text='🔄',
+            size_hint_x=0.4,
+            background_color=[0.26, 0.46, 0.66, 1],
+            background_normal='',
+            bold=True,
+            font_size='13sp',
+            color=[1, 1, 1, 1]
+        )
+        switch_cam_btn.bind(on_release=self.switch_camera)
+        
+        btn_layout.add_widget(self.scan_btn)
+        btn_layout.add_widget(switch_cam_btn)
+        
+        card.add_widget(title_box)
+        card.add_widget(self.camera_container)
+        card.add_widget(self.scanner_status)
+        card.add_widget(btn_layout)
+        
+        self.camera_detached = False
+        self.floating_camera_popup = None
+        
+        return card
+    
+    def _update_camera_outer(self, instance, value):
+        self.camera_outer_border.pos = instance.pos
+        self.camera_outer_border.size = instance.size
+    
+    def _update_camera_bg(self, instance, value):
+        self.camera_bg.pos = instance.pos
+        self.camera_bg.size = instance.size
+    
+    def _update_scanner_card(self, instance, value):
+        self.scanner_card_rect.pos = instance.pos
+        self.scanner_card_rect.size = instance.size
+    
+    def toggle_camera_detach(self, instance):
+        """Destacar/encaixar câmera"""
+        if not self.camera_detached:
+            self.detach_camera()
+        else:
+            self.attach_camera()
+    
+    def detach_camera(self):
+        """Destacar câmera em janela flutuante"""
+        content = BoxLayout(orientation='vertical', padding=0, spacing=0)
+        
+        scatter = Scatter(
+            do_rotation=False,
+            do_scale=True,
+            scale_min=0.3,
+            scale_max=3.0,
+            size_hint=(None, None),
+            size=(400, 350)
         )
         
-        button_row1.add_widget(filter_btn)
-        button_row1.add_widget(today_btn)
+        scatter_content = BoxLayout(orientation='vertical', padding=10, spacing=5)
+        with scatter_content.canvas.before:
+            Color(0.2, 0.2, 0.2, 1)
+            scatter_bg = Rectangle(pos=scatter_content.pos, size=scatter_content.size)
+        scatter_content.bind(pos=lambda s, v, r=scatter_bg: setattr(r, 'pos', s.pos))
+        scatter_content.bind(size=lambda s, v, r=scatter_bg: setattr(r, 'size', s.size))
         
-        # Segunda linha de botões
-        button_row2 = BoxLayout(orientation='horizontal', size_hint_y=None, height=50, spacing=10)
+        title_bar = BoxLayout(size_hint_y=None, height=35, spacing=10, padding=[10, 5])
+        with title_bar.canvas.before:
+            Color(0.15, 0.15, 0.15, 1)
+            title_bg = Rectangle(pos=title_bar.pos, size=title_bar.size)
+        title_bar.bind(pos=lambda s, v, r=title_bg: setattr(r, 'pos', s.pos))
+        title_bar.bind(size=lambda s, v, r=title_bg: setattr(r, 'size', s.size))
         
-        yesterday_btn = Button(
-            text="Ontem",
-            background_color=(0.8, 0.6, 0.2, 1),
-            font_size=14
+        title_label = Label(
+            text='📷 Scanner - Arraste | Pinça para redimensionar',
+            color=[1, 1, 1, 1],
+            font_size='12sp',
+            bold=True
         )
         
-        all_btn = Button(
-            text="Todas as Vendas",
-            background_color=(0.8, 0.4, 0.2, 1),
-            font_size=14
-        )
-        
-        button_row2.add_widget(yesterday_btn)
-        button_row2.add_widget(all_btn)
-        
-        # Botão fechar
         close_btn = Button(
-            text="Fechar",
-            size_hint_y=None,
-            height=40,
-            background_color=(0.6, 0.3, 0.3, 1),
-            font_size=14
+            text='✖',
+            size_hint=(None, None),
+            size=(30, 25),
+            background_color=[0.8, 0.2, 0.2, 1],
+            background_normal='',
+            bold=True,
+            color=[1, 1, 1, 1]
         )
+        close_btn.bind(on_release=lambda x: self.attach_camera())
         
-        button_container.add_widget(button_row1)
-        button_container.add_widget(button_row2)
-        button_container.add_widget(close_btn)
-        content.add_widget(button_container)
+        title_bar.add_widget(title_label)
+        title_bar.add_widget(close_btn)
         
-        # Criar popup
-        popup = Popup(
-            title="",
+        camera_box = BoxLayout(padding=5)
+        with camera_box.canvas.before:
+            Color(0.1, 0.1, 0.1, 1)
+            camera_box_bg = Rectangle(pos=camera_box.pos, size=camera_box.size)
+        camera_box.bind(pos=lambda s, v, r=camera_box_bg: setattr(r, 'pos', s.pos))
+        camera_box.bind(size=lambda s, v, r=camera_box_bg: setattr(r, 'size', s.size))
+        
+        self.camera_container.clear_widgets()
+        camera_box.add_widget(self.camera_image)
+        
+        scatter_content.add_widget(title_bar)
+        scatter_content.add_widget(camera_box)
+        scatter.add_widget(scatter_content)
+        content.add_widget(scatter)
+        
+        self.floating_camera_popup = Popup(
+            title='',
             content=content,
-            size_hint=(0.85, 0.7),
+            size_hint=(None, None),
+            size=(500, 450),
+            separator_height=0,
             auto_dismiss=False,
-            background_color=(0.1, 0.1, 0.1, 0.9)
+            background='',
+            background_color=[0, 0, 0, 0]
         )
         
-        # Funções dos botões
-        def apply_filter(instance):
-            date_str = date_input.text.strip()
-            if self.validate_date(date_str):
-                self.current_filter_date = date_str
-                self.load_sales(date_str)
-                popup.dismiss()
-                self.show_popup("Sucesso", f"Filtro aplicado para {date_str}", timeout=2)
-            else:
-                self.show_popup("Erro", "Formato de data inválido. Use DD/MM/AAAA")
+        self.floating_camera_popup.open()
+        self.camera_detached = True
+        self.detach_btn.text = '⬊'
+        self.detach_btn.background_color = [0.8, 0.4, 0.2, 1]
         
-        def filter_today(instance):
-            today_str = datetime.now().strftime("%d/%m/%Y")
-            self.current_filter_date = today_str
-            self.load_sales(today_str)
-            popup.dismiss()
-            self.show_popup("Sucesso", "Mostrando vendas de hoje", timeout=2)
-        
-        def filter_yesterday(instance):
-            yesterday = datetime.now() - timedelta(days=1)
-            yesterday_str = yesterday.strftime("%d/%m/%Y")
-            self.current_filter_date = yesterday_str
-            self.load_sales(yesterday_str)
-            popup.dismiss()
-            self.show_popup("Sucesso", "Mostrando vendas de ontem", timeout=2)
-        
-        def show_all(instance):
-            self.current_filter_date = None
-            self.load_sales()
-            popup.dismiss()
-            self.show_popup("Sucesso", "Mostrando todas as vendas", timeout=2)
-        
-        def close_popup(instance):
-            popup.dismiss()
-        
-        # Bind dos botões
-        filter_btn.bind(on_press=apply_filter)
-        today_btn.bind(on_press=filter_today)
-        yesterday_btn.bind(on_press=filter_yesterday)
-        all_btn.bind(on_press=show_all)
-        close_btn.bind(on_press=close_popup)
-        
-        popup.open()
-    
-    def validate_date(self, date_str):
-        """Validar formato de data"""
-        try:
-            datetime.strptime(date_str, "%d/%m/%Y")
-            return True
-        except ValueError:
-            return False
-    
-    def new_sale(self):
-        """Abrir formulário para registrar uma nova venda"""
-        sale_form = SaleForm(self)
-        if sale_form.products:
-            sale_form.open()
-        else:
-            self.show_popup("Erro", "Não há produtos disponíveis para venda.")
-    
-    def refresh_sales(self):
-        """Atualizar a lista de vendas mantendo o filtro atual"""
-        if self.current_filter_date:
-            self.load_sales(self.current_filter_date)
-        else:
-            self.load_sales()
-        self.show_popup("Sucesso", "Lista atualizada!", timeout=2)
-    
-    def show_popup(self, title, message, timeout=None):
-        """Exibir uma mensagem popup com timeout opcional"""
-        content = BoxLayout(orientation='vertical', spacing=10, padding=20)
-        
-        message_label = Label(
-            text=message,
-            text_size=(None, None),
-            halign='center',
-            valign='middle',
-            font_size=16,
-            color=(0.9, 0.9, 0.9, 1)
+        placeholder = Label(
+            text='📷\nCâmera\nDestacada',
+            color=[0.5, 0.5, 0.5, 1],
+            font_size='10sp',
+            halign='center'
         )
+        placeholder.bind(size=lambda s, v: setattr(s, 'text_size', (s.width, None)))
+        self.camera_container.add_widget(placeholder)
+    
+    def attach_camera(self):
+        """Encaixar câmera de volta"""
+        if self.floating_camera_popup:
+            self.floating_camera_popup.content.children[0].children[0].children[0].clear_widgets()
+            self.floating_camera_popup.dismiss()
+            self.floating_camera_popup = None
         
-        if not timeout:
-            ok_btn = Button(
-                text="OK",
-                size_hint_y=None,
-                height=40,
-                background_color=(0.2, 0.5, 0.8, 1)
+        self.camera_container.clear_widgets()
+        
+        camera_inner = BoxLayout(padding=0)
+        with camera_inner.canvas.before:
+            Color(0.12, 0.12, 0.12, 1)
+            camera_bg = RoundedRectangle(pos=camera_inner.pos, size=camera_inner.size, radius=[5])
+        camera_inner.bind(pos=lambda s, v, r=camera_bg: setattr(r, 'pos', s.pos))
+        camera_inner.bind(size=lambda s, v, r=camera_bg: setattr(r, 'size', s.size))
+        
+        camera_inner.add_widget(self.camera_image)
+        self.camera_container.add_widget(camera_inner)
+        
+        self.camera_detached = False
+        self.detach_btn.text = '⬈'
+        self.detach_btn.background_color = [0.3, 0.5, 0.7, 1]
+    
+    def create_payment_card(self):
+        """Card de pagamento"""
+        card = BoxLayout(orientation='vertical', padding=12, spacing=8)
+        
+        with card.canvas.before:
+            Color(1, 1, 1, 1)
+            self.payment_card_rect = RoundedRectangle(
+                pos=card.pos,
+                size=card.size,
+                radius=[10]
             )
-            content.add_widget(message_label)
-            content.add_widget(ok_btn)
-        else:
-            content.add_widget(message_label)
+        card.bind(pos=self._update_payment_card, size=self._update_payment_card)
         
-        popup = Popup(
-            title=title,
-            content=content,
-            size_hint=(0.7, 0.4),
-            background_color=(0.1, 0.1, 0.1, 0.9)
+        title = Label(
+            text='💳 PAGAMENTO',
+            size_hint_y=None,
+            height=26,
+            bold=True,
+            font_size='15sp',
+            color=[0.2, 0.2, 0.2, 1]
         )
         
-        if not timeout:
-            ok_btn.bind(on_press=popup.dismiss)
+        # Valor pago
+        paid_layout = BoxLayout(size_hint_y=None, height=45, spacing=8)
+        paid_layout.add_widget(Label(
+            text='Pago:',
+            bold=True,
+            size_hint_x=0.35,
+            color=[0.2, 0.2, 0.2, 1],
+            font_size='13sp'
+        ))
+        self.paid_input = TextInput(
+            hint_text='0.00',
+            input_filter='float',
+            multiline=False,
+            font_size='16sp',
+            size_hint_x=0.65,
+            padding=[8, 10]
+        )
+        self.paid_input.bind(text=self.calculate_change)
+        paid_layout.add_widget(self.paid_input)
         
-        popup.open()
+        # Troco
+        change_layout = BoxLayout(size_hint_y=None, height=45, spacing=8)
+        change_layout.add_widget(Label(
+            text='Troco:',
+            bold=True,
+            size_hint_x=0.35,
+            color=[0.2, 0.2, 0.2, 1],
+            font_size='13sp'
+        ))
+        self.change_label = Label(
+            text='0.00 MZN',
+            bold=True,
+            font_size='16sp',
+            size_hint_x=0.65,
+            color=[0.16, 0.66, 0.16, 1]
+        )
+        change_layout.add_widget(self.change_label)
         
-        if timeout:
-            Clock.schedule_once(lambda dt: popup.dismiss(), timeout)
-
-    def export_sales_data(self):
-        """Exportar dados de vendas para CSV"""
+        # Botões
+        actions_layout = BoxLayout(
+            orientation='vertical',
+            spacing=7,
+            size_hint_y=None,
+            height=135
+        )
+        
+        btn_finalize = Button(
+            text='✓ FINALIZAR',
+            background_color=[0.12, 0.62, 0.22, 1],
+            background_normal='',
+            bold=True,
+            font_size='14sp'
+        )
+        btn_finalize.bind(on_release=self.finalize_sale)
+        
+        btn_print = Button(
+            text='🖨️ IMPRIMIR',
+            background_color=[0.22, 0.42, 0.72, 1],
+            background_normal='',
+            bold=True,
+            font_size='13sp'
+        )
+        btn_print.bind(on_release=self.print_receipt)
+        
+        btn_cancel = Button(
+            text='✖ CANCELAR',
+            background_color=[0.82, 0.32, 0.32, 1],
+            background_normal='',
+            bold=True,
+            font_size='13sp'
+        )
+        btn_cancel.bind(on_release=self.cancel_sale)
+        
+        actions_layout.add_widget(btn_finalize)
+        actions_layout.add_widget(btn_print)
+        actions_layout.add_widget(btn_cancel)
+        
+        card.add_widget(title)
+        card.add_widget(Widget())
+        card.add_widget(paid_layout)
+        card.add_widget(change_layout)
+        card.add_widget(Widget())
+        card.add_widget(actions_layout)
+        
+        return card
+    
+    def _update_payment_card(self, instance, value):
+        self.payment_card_rect.pos = instance.pos
+        self.payment_card_rect.size = instance.size
+    
+    # =============== MÉTODOS DE FUNCIONALIDADE ===============
+    
+    def load_products(self):
+        """Carregar produtos"""
         try:
-            import csv
-            from datetime import datetime
+            products = self.db.get_products_for_sale()
+            self.products_dict = {}
             
-            # Obter vendas com base no filtro atual
-            if self.current_filter_date:
-                sales = self.db.get_sales_by_date(self.current_filter_date)
-                filename = f"vendas_{self.current_filter_date.replace('/', '_')}.csv"
-            else:
-                sales = self.db.get_all_sales()
-                filename = f"vendas_completas_{datetime.now().strftime('%d_%m_%Y')}.csv"
+            print("\n" + "="*70)
+            print("📦 PRODUTOS CARREGADOS")
+            print("="*70)
             
-            if not sales:
-                self.show_popup("Aviso", "Não há vendas para exportar.")
-                return
+            for p in products:
+                self.products_dict[p[0]] = p
+                barcode_display = f"'{p[4]}'" if p[4] else "SEM CÓDIGO"
+                print(f"ID: {p[0]:4d} | {p[1]:35s} | Estoque: {p[2]:4d} | "
+                      f"Preço: {p[3]:8.2f} | Barcode: {barcode_display}")
             
-            # Agrupar vendas por produto
-            grouped_sales = self.group_sales_by_product(sales)
+            print(f"\n✅ Total: {len(self.products_dict)} produtos")
+            print("="*70 + "\n")
             
-            # Escrever arquivo CSV
-            with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-                fieldnames = ['Produto', 'Quantidade_Total', 'Preco_Unitario', 'Total_Vendas', 'Ultima_Venda']
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                
-                writer.writeheader()
-                for product_name, data in grouped_sales.items():
-                    writer.writerow({
-                        'Produto': product_name,
-                        'Quantidade_Total': data['total_quantity'],
-                        'Preco_Unitario': data['unit_price'],
-                        'Total_Vendas': data['total_amount'],
-                        'Ultima_Venda': data['last_sale_date']
-                    })
-            
-            self.show_popup("Sucesso", f"Dados exportados para {filename}", timeout=3)
+            self.display_products(products)
             
         except Exception as e:
-            self.show_popup("Erro", f"Erro ao exportar dados: {str(e)}")
-
-    def show_sales_summary(self):
-        """Mostrar resumo das vendas"""
-        if self.current_filter_date:
-            sales = self.db.get_sales_by_date(self.current_filter_date)
-            period_text = f"de {self.current_filter_date}"
-        else:
-            sales = self.db.get_all_sales()
-            period_text = "totais"
+            print(f"❌ Erro: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def display_products(self, products):
+        """Exibir produtos"""
+        self.products_list.clear_widgets()
         
-        if not sales:
-            self.show_popup("Aviso", "Não há vendas para resumir.")
+        if not products:
+            self.products_list.add_widget(Label(
+                text='Nenhum produto',
+                size_hint_y=None,
+                height=50,
+                color=[0.5, 0.5, 0.5, 1],
+                italic=True
+            ))
+            self.products_count_label.text = '0 itens'
             return
         
-        # Calcular estatísticas
-        total_sales = len(sales)
-        total_revenue = sum(sale[4] for sale in sales)  # Total de cada venda
-        total_quantity = sum(sale[2] for sale in sales)  # Quantidade total
+        self.products_count_label.text = f'{len(products)} itens'
         
-        # Produto mais vendido
-        product_quantities = {}
-        for sale in sales:
-            product_name = sale[1]
-            quantity = sale[2]
-            if product_name in product_quantities:
-                product_quantities[product_name] += quantity
-            else:
-                product_quantities[product_name] = quantity
-        
-        most_sold_product = max(product_quantities, key=product_quantities.get) if product_quantities else "N/A"
-        most_sold_qty = product_quantities.get(most_sold_product, 0)
-        
-        summary_text = f"""Resumo das vendas {period_text}:
+        for product in products:
+            try:
+                product_id = product[0]
+                product_name = product[1]
+                product_stock = product[2]
+                product_price = product[3]
+                
+                item_card = BoxLayout(
+                    orientation='horizontal',
+                    size_hint_y=None,
+                    height=70,
+                    padding=[0, 0],
+                    spacing=0
+                )
 
-• Total de vendas: {total_sales}
-• Receita total: {total_revenue:.2f} MZN
-• Quantidade total vendida: {total_quantity}
-• Produto mais vendido: {most_sold_product} ({most_sold_qty} unidades)
-• Receita média por venda: {total_revenue/total_sales:.2f} MZN"""
+                # ===== FUNDO DO CARD =====
+                with item_card.canvas.before:
+                    # Sombra
+                    Color(0, 0, 0, 0.06)
+                    shadow = RoundedRectangle(
+                        pos=(item_card.x + 1, item_card.y - 2),
+                        size=item_card.size,
+                        radius=[10]
+                    )
+                    # Fundo branco
+                    Color(1, 1, 1, 1)
+                    bg = RoundedRectangle(
+                        pos=item_card.pos,
+                        size=item_card.size,
+                        radius=[10]
+                    )
+                    # Borda
+                    Color(0.92, 0.92, 0.92, 1)
+                    border = Line(
+                        rounded_rectangle=(item_card.x, item_card.y, item_card.width, item_card.height, 10),
+                        width=1
+                    )
+
+                item_card.bind(
+                    pos=lambda s, v, r=bg, sh=shadow, b=border: [
+                        setattr(r, 'pos', s.pos),
+                        setattr(sh, 'pos', (s.x + 1, s.y - 2)),
+                        setattr(b, 'rounded_rectangle', (s.x, s.y, s.width, s.height, 10))
+                    ],
+                    size=lambda s, v, r=bg, sh=shadow, b=border: [
+                        setattr(r, 'size', s.size),
+                        setattr(sh, 'size', s.size),
+                        setattr(b, 'rounded_rectangle', (s.x, s.y, s.width, s.height, 10))
+                    ]
+                )
+
+                # ===== CAMPO ID (8% da largura) =====
+                id_field = BoxLayout(
+                    orientation='vertical',
+                    size_hint=(0.08, 1),
+                    padding=[8, 10]
+                )
+
+                id_header = Label(
+                    text='ID',
+                    font_size='9sp',
+                    bold=True,
+                    color=[0.5, 0.5, 0.5, 1],
+                    size_hint_y=None,
+                    height=12,
+                    halign='center',
+                    valign='bottom'
+                )
+                id_header.bind(size=lambda s, v: setattr(s, 'text_size', s.size))
+
+                id_value = Label(
+                    text=f'{product_id}',
+                    font_size='14sp',
+                    bold=True,
+                    color=[0.25, 0.5, 0.85, 1],
+                    halign='center',
+                    valign='top'
+                )
+                id_value.bind(size=lambda s, v: setattr(s, 'text_size', s.size))
+
+                id_field.add_widget(id_header)
+                id_field.add_widget(id_value)
+
+                # Divisor 1
+                div1 = Widget(size_hint=(None, 1), width=1)
+                with div1.canvas:
+                    Color(0.9, 0.9, 0.9, 1)
+                    div1_line = Rectangle(pos=div1.pos, size=div1.size)
+                div1.bind(
+                    pos=lambda s, v, r=div1_line: setattr(r, 'pos', (s.x, s.y + 10)),
+                    size=lambda s, v, r=div1_line: setattr(r, 'size', (s.width, s.height - 20))
+                )
+
+                # ===== CAMPO NOME (40% da largura - flex) =====
+                name_field = BoxLayout(
+                    orientation='vertical',
+                    size_hint=(0.30, 1),
+                    padding=[12, 10]
+                )
+
+                name_header = Label(
+                    text='PRODUTO',
+                    font_size='9sp',
+                    bold=True,
+                    color=[0.5, 0.5, 0.5, 1],
+                    size_hint_y=None,
+                    height=12,
+                    halign='left',
+                    valign='bottom'
+                )
+                name_header.bind(size=lambda s, v: setattr(s, 'text_size', (s.width, None)))
+
+                name_value = Label(
+                    text=product_name,
+                    font_size='14sp',
+                    bold=True,
+                    color=[0.15, 0.15, 0.15, 1],
+                    halign='left',
+                    valign='top',
+                    shorten=True,
+                    shorten_from='right'
+                )
+                name_value.bind(size=lambda s, v: setattr(s, 'text_size', (s.width, None)))
+
+                name_field.add_widget(name_header)
+                name_field.add_widget(name_value)
+
+                # Divisor 2
+                div2 = Widget(size_hint=(None, 1), width=1)
+                with div2.canvas:
+                    Color(0.9, 0.9, 0.9, 1)
+                    div2_line = Rectangle(pos=div2.pos, size=div2.size)
+                div2.bind(
+                    pos=lambda s, v, r=div2_line: setattr(r, 'pos', (s.x, s.y + 10)),
+                    size=lambda s, v, r=div2_line: setattr(r, 'size', (s.width, s.height - 20))
+                )
+
+                # ===== CAMPO ESTOQUE (15% da largura) =====
+                stock_field = BoxLayout(
+                    orientation='vertical',
+                    size_hint=(0.20, 1),
+                    padding=[10, 10]
+                )
+
+                stock_header = Label(
+                    text='ESTOQUE',
+                    font_size='9sp',
+                    bold=True,
+                    color=[0.5, 0.5, 0.5, 1],
+                    size_hint_y=None,
+                    height=12,
+                    halign='center',
+                    valign='bottom'
+                )
+                stock_header.bind(size=lambda s, v: setattr(s, 'text_size', s.size))
+
+                # Definir cor baseada no estoque
+                if product_stock > 50:
+                    stock_color = [0.15, 0.7, 0.3, 1]  # Verde
+                elif product_stock > 20:
+                    stock_color = [0.9, 0.7, 0.1, 1]  # Amarelo
+                else:
+                    stock_color = [0.9, 0.2, 0.2, 1]  # Vermelho
+
+                stock_value = Label(
+                    text=str(product_stock),
+                    font_size='16sp',
+                    bold=True,
+                    color=stock_color,
+                    halign='center',
+                    valign='top'
+                )
+                stock_value.bind(size=lambda s, v: setattr(s, 'text_size', s.size))
+
+                stock_field.add_widget(stock_header)
+                stock_field.add_widget(stock_value)
+
+                # Divisor 3
+                div3 = Widget(size_hint=(None, 1), width=1)
+                with div3.canvas:
+                    Color(0.9, 0.9, 0.9, 1)
+                    div3_line = Rectangle(pos=div3.pos, size=div3.size)
+                div3.bind(
+                    pos=lambda s, v, r=div3_line: setattr(r, 'pos', (s.x, s.y + 10)),
+                    size=lambda s, v, r=div3_line: setattr(r, 'size', (s.width, s.height - 20))
+                )
+
+                # ===== CAMPO PREÇO (20% da largura) =====
+                price_field = BoxLayout(
+                    orientation='vertical',
+                    size_hint=(0.30, 1),
+                    padding=[10, 10]
+                )
+
+                price_header = Label(
+                    text='PREÇO',
+                    font_size='9sp',
+                    bold=True,
+                    color=[0.5, 0.5, 0.5, 1],
+                    size_hint_y=None,
+                    height=12,
+                    halign='center',
+                    valign='bottom'
+                )
+                price_header.bind(size=lambda s, v: setattr(s, 'text_size', s.size))
+
+                price_value_box = BoxLayout(
+                    orientation='horizontal',
+                    spacing=3,
+                    padding=[0, 2, 0, 0]
+                )
+
+                price_amount = Label(
+                    text=f'{product_price:,.2f}',
+                    font_size='14sp',
+                    bold=True,
+                    color=[0.12, 0.65, 0.25, 1],
+                    halign='right',
+                    valign='top'
+                )
+                price_amount.bind(size=lambda s, v: setattr(s, 'text_size', s.size))
+
+                price_currency = Label(
+                    text='MZN',
+                    font_size='9sp',
+                    bold=True,
+                    color=[0.12, 0.65, 0.25, 0.8],
+                    size_hint_x=None,
+                    width=28,
+                    halign='left',
+                    valign='top'
+                )
+                price_currency.bind(size=lambda s, v: setattr(s, 'text_size', s.size))
+
+                price_value_box.add_widget(price_amount)
+                price_value_box.add_widget(price_currency)
+
+                price_field.add_widget(price_header)
+                price_field.add_widget(price_value_box)
+
+                # Divisor 4
+                div4 = Widget(size_hint=(None, 1), width=1)
+                with div4.canvas:
+                    Color(0.9, 0.9, 0.9, 1)
+                    div4_line = Rectangle(pos=div4.pos, size=div4.size)
+                div4.bind(
+                    pos=lambda s, v, r=div4_line: setattr(r, 'pos', (s.x, s.y + 10)),
+                    size=lambda s, v, r=div4_line: setattr(r, 'size', (s.width, s.height - 20))
+                )
+
+                # ===== BOTÃO ADICIONAR (17% da largura) =====
+                btn_field = BoxLayout(
+                    size_hint=(0.17, 1),
+                    padding=[10, 12]
+                )
+
+                add_btn = Button(
+                    text='+',
+                    size_hint=(1, 1),
+                    background_color=[0, 0, 0, 0],
+                    background_normal='',
+                    bold=True,
+                    font_size='26sp',
+                    color=[1, 1, 1, 1]
+                )
+
+                with add_btn.canvas.before:
+                    Color(0.15, 0.7, 0.3, 1)
+                    btn_bg = RoundedRectangle(
+                        pos=add_btn.pos,
+                        size=add_btn.size,
+                        radius=[8]
+                    )
+
+                add_btn.bind(
+                    pos=lambda s, v, r=btn_bg: setattr(r, 'pos', s.pos),
+                    size=lambda s, v, r=btn_bg: setattr(r, 'size', s.size)
+                )
+
+                add_btn.bind(on_release=lambda btn, p=product: self.add_to_cart(p))
+
+                btn_field.add_widget(add_btn)
+
+                # ===== MONTAGEM DA TABELA RESPONSIVA =====
+                item_card.add_widget(id_field)
+                item_card.add_widget(div1)
+                item_card.add_widget(name_field)
+                item_card.add_widget(div2)
+                item_card.add_widget(stock_field)
+                item_card.add_widget(div3)
+                item_card.add_widget(price_field)
+                item_card.add_widget(div4)
+                item_card.add_widget(btn_field)
+
+                self.products_list.add_widget(item_card)
+            except Exception as e:
+                print(f"Erro ao exibir produto: {e}")
+                continue
+    
+    def on_search(self, instance, text):
+        """Filtrar produtos por nome, ID ou código"""
+        if not text:
+            self.load_products()
+            return
         
-        content = BoxLayout(orientation='vertical', spacing=15, padding=20)
+        try:
+            products = self.db.get_products_for_sale()
+            text_lower = text.lower().strip()
+            
+            filtered = [
+                p for p in products
+                if (text_lower in str(p[1]).lower() or  # nome
+                    text_lower in str(p[0]) or  # ID
+                    (p[4] and text_lower in str(p[4]).lower()))  # barcode
+            ]
+            
+            self.display_products(filtered)
+            
+        except Exception as e:
+            print(f"Erro na pesquisa: {e}")
+    
+    def on_search_enter(self, instance):
+        """Ao pressionar Enter, busca por código de barras exato"""
+        text = instance.text.strip()
+        if not text:
+            return
         
-        summary_label = Label(
-            text=summary_text,
-            text_size=(None, None),
-            halign='left',
-            valign='top',
-            font_size=14,
-            color=(0.9, 0.9, 0.9, 1)
+        print(f"\n{'='*70}")
+        print(f"🔍 BUSCA POR ENTER - Código: '{text}'")
+        print(f"{'='*70}")
+        
+        try:
+            # Tentar buscar produto por código de barras exato
+            product = self.db.get_product_by_barcode(text)
+            
+            if product:
+                print(f"✅ PRODUTO ENCONTRADO!")
+                print(f"   ID: {product[0]} | Nome: {product[1]}")
+                print(f"{'='*70}\n")
+                
+                self.add_to_cart(product)
+                self.show_message(f'✅ {product[1]} adicionado!')
+                instance.text = ''
+            else:
+                print(f"❌ Código não encontrado")
+                print(f"{'='*70}\n")
+                # Mantém o filtro de pesquisa
+                
+        except Exception as e:
+            print(f"❌ Erro: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def add_to_cart(self, product):
+        """Adicionar ao carrinho"""
+        try:
+            product_id = product[0]
+            product_name = product[1]
+            product_stock = product[2]
+            product_price = product[3]
+            
+            for item in self.cart_items:
+                if item['id'] == product_id:
+                    if item['qty'] + 1 <= product_stock:
+                        item['qty'] += 1
+                        item['total'] = item['qty'] * item['price']
+                        self.update_cart_display()
+                        return
+                    else:
+                        self.show_message("❌ Estoque insuficiente!")
+                        return
+            
+            self.cart_items.append({
+                'id': product_id,
+                'name': product_name,
+                'qty': 1,
+                'price': product_price,
+                'total': product_price,
+                'max_stock': product_stock
+            })
+            
+            self.update_cart_display()
+            
+        except Exception as e:
+            print(f"❌ Erro: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def update_cart_display(self):
+        """Atualizar carrinho"""
+        self.cart_list.clear_widgets()
+        self.total_amount = 0
+        
+        if not self.cart_items:
+            self.cart_count_label.text = '0 itens'
+        else:
+            self.cart_count_label.text = f'{len(self.cart_items)} itens'
+        
+        for i, item in enumerate(self.cart_items):
+            bg_color = [0.98, 0.98, 0.98, 1] if i % 2 == 0 else [1, 1, 1, 1]
+            
+            headers = [
+                ('ID', 0.11),
+                ('Produto', 0.39),
+                ('Qtd', 0.17),
+                ('Total', 0.23),
+                ('', 0.10)
+            ]
+            
+            # ID
+            id_cell = self.create_cart_cell(str(item['id']), bg_color)
+            id_cell.size_hint_x = headers[0][1]
+            self.cart_list.add_widget(id_cell)
+            
+            # Nome
+            name = item['name'][:11] + '...' if len(item['name']) > 11 else item['name']
+            name_cell = self.create_cart_cell(name, bg_color)
+            name_cell.size_hint_x = headers[1][1]
+            self.cart_list.add_widget(name_cell)
+            
+            # Quantidade
+            qty_input = TextInput(
+                text=str(item['qty']),
+                input_filter='int',
+                multiline=False,
+                size_hint_y=None,
+                height=26,
+                font_size='11sp',
+                padding=[3, 5]
+            )
+            qty_input.bind(text=lambda inst, val, idx=i: self.update_qty(idx, val))
+            cell = BoxLayout(padding=1, size_hint_x=headers[2][1])
+            with cell.canvas.before:
+                Color(*bg_color)
+                cell_rect = RoundedRectangle(pos=cell.pos, size=cell.size, radius=[3])
+            cell.bind(pos=lambda s, v, r=cell_rect: setattr(r, 'pos', s.pos))
+            cell.bind(size=lambda s, v, r=cell_rect: setattr(r, 'size', s.size))
+            cell.add_widget(qty_input)
+            self.cart_list.add_widget(cell)
+            
+            # Total
+            total_cell = self.create_cart_cell(f'{item["total"]:.2f}', bg_color)
+            total_cell.size_hint_x = headers[3][1]
+            self.cart_list.add_widget(total_cell)
+            
+            # Remover
+            btn_remove = Button(
+                text='✖',
+                size_hint_y=None,
+                height=26,
+                background_color=[0.88, 0.22, 0.22, 1],
+                background_normal='',
+                font_size='13sp'
+            )
+            btn_remove.bind(on_release=lambda btn, idx=i: self.remove_from_cart(idx))
+            cell = BoxLayout(padding=1, size_hint_x=headers[4][1])
+            with cell.canvas.before:
+                Color(*bg_color)
+                cell_rect = RoundedRectangle(pos=cell.pos, size=cell.size, radius=[3])
+            cell.bind(pos=lambda s, v, r=cell_rect: setattr(r, 'pos', s.pos))
+            cell.bind(size=lambda s, v, r=cell_rect: setattr(r, 'size', s.size))
+            cell.add_widget(btn_remove)
+            self.cart_list.add_widget(cell)
+            
+            self.total_amount += item['total']
+        
+        self.total_label.text = f'{self.total_amount:.2f} MZN'
+        self.calculate_change()
+    
+    def create_cart_cell(self, text, bg_color):
+        """Criar célula"""
+        lbl = Label(
+            text=text,
+            size_hint_y=None,
+            height=26,
+            color=[0.2, 0.2, 0.2, 1],
+            font_size='11sp'
         )
-        summary_label.bind(size=lambda instance, value: setattr(instance, 'text_size', (instance.width, None)))
+        with lbl.canvas.before:
+            Color(*bg_color)
+            bg_rect = RoundedRectangle(size=lbl.size, pos=lbl.pos, radius=[3])
+        lbl.bind(size=lambda s, v, r=bg_rect: setattr(r, 'size', s.size))
+        lbl.bind(pos=lambda s, v, r=bg_rect: setattr(r, 'pos', s.pos))
+        return lbl
+    
+    def update_qty(self, index, value):
+        """Atualizar quantidade"""
+        try:
+            if not value or value.strip() == '':
+                return
+            qty = int(value)
+            if qty <= 0:
+                return
+            if index >= len(self.cart_items):
+                return
+            if qty > self.cart_items[index]['max_stock']:
+                self.show_message("❌ Qtd excede estoque!")
+                return
+            
+            self.cart_items[index]['qty'] = qty
+            self.cart_items[index]['total'] = qty * self.cart_items[index]['price']
+            Clock.schedule_once(lambda dt: self.update_cart_display(), 0.5)
+            
+        except ValueError:
+            pass
+        except Exception as e:
+            print(f"Erro: {e}")
+    
+    def remove_from_cart(self, index):
+        """Remover do carrinho"""
+        try:
+            if 0 <= index < len(self.cart_items):
+                self.cart_items.pop(index)
+                self.update_cart_display()
+        except Exception as e:
+            print(f"Erro: {e}")
+    
+    def clear_cart(self, instance):
+        """Limpar carrinho"""
+        self.cart_items.clear()
+        self.update_cart_display()
+    
+    def calculate_change(self, *args):
+        """Calcular troco"""
+        try:
+            paid = float(self.paid_input.text) if self.paid_input.text else 0
+            change = paid - self.total_amount
+            
+            if change >= 0:
+                self.change_label.text = f'{change:.2f} MZN'
+                self.change_label.color = [0.16, 0.66, 0.16, 1]
+            else:
+                self.change_label.text = 'INSUFICIENTE'
+                self.change_label.color = [0.88, 0.22, 0.22, 1]
+                
+        except ValueError:
+            self.change_label.text = '0.00 MZN'
+        except Exception as e:
+            self.change_label.text = '0.00 MZN'
+    
+    def toggle_scanner(self, instance):
+        """Toggle scanner"""
+        if not self.scanning:
+            self.scanning = True
+            self.scan_btn.text = '⏹'
+            self.scan_btn.background_color = [0.88, 0.26, 0.26, 1]
+            self.scanner_status.text = '🟢 Ativo'
+            self.scanner_status.color = [0.16, 0.72, 0.22, 1]
+            Clock.schedule_interval(self.update_camera, 1.0/15.0)
+        else:
+            self.scanning = False
+            self.scan_btn.text = '▶'
+            self.scan_btn.background_color = [0.16, 0.66, 0.26, 1]
+            self.scanner_status.text = '⚫ Inativa'
+            self.scanner_status.color = [0.5, 0.5, 0.5, 1]
+            Clock.unschedule(self.update_camera)
+            if hasattr(self, 'camera_capture') and self.camera_capture:
+                self.camera_capture.release()
+                self.camera_capture = None
+            self.camera_image.texture = None
+    
+    def update_camera(self, dt):
+        """Atualizar câmera"""
+        if not self.scanning:
+            return
+        
+        if not hasattr(self, 'camera_capture') or self.camera_capture is None:
+            try:
+                self.camera_capture = cv2.VideoCapture(self.current_camera)
+                self.camera_capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                self.camera_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                
+                if not self.camera_capture.isOpened():
+                    self.scanner_status.text = f'❌ Erro'
+                    self.scanner_status.color = [0.9, 0.2, 0.2, 1]
+                    self.scanning = False
+                    self.scan_btn.text = '▶'
+                    self.scan_btn.background_color = [0.16, 0.66, 0.26, 1]
+                    return
+                
+                self.last_barcode = None
+                self.last_barcode_time = 0
+                
+            except Exception as e:
+                print(f"❌ Erro: {e}")
+                return
+        
+        ret, frame = self.camera_capture.read()
+        
+        if not ret:
+            return
+        
+        try:
+            import time
+            
+            frame = cv2.convertScaleAbs(frame, alpha=1.2, beta=10)
+            codes = decode(frame)
+            current_time = time.time()
+            
+            if codes:
+                for code in codes:
+                    try:
+                        barcode_raw = code.data.decode('utf-8')
+                        barcode_value = ''.join(c for c in barcode_raw if c.isprintable()).strip()
+                        
+                        if (barcode_value == self.last_barcode and 
+                            (current_time - self.last_barcode_time) < 2):
+                            continue
+                        
+                        self.last_barcode = barcode_value
+                        self.last_barcode_time = current_time
+                        
+                        print(f"\n{'='*70}")
+                        print(f"📷 CÓDIGO: '{barcode_value}'")
+                        print(f"{'='*70}")
+                        
+                        self.scanner_status.text = f'🔍'
+                        self.scanner_status.color = [0.2, 0.5, 0.8, 1]
+                        
+                        product = self.db.get_product_by_barcode(barcode_value)
+                        
+                        if product:
+                            print(f"✅ OK: {product[1]}")
+                            print(f"{'='*70}\n")
+                            
+                            self.add_to_cart(product)
+                            self.show_message(f'✅ {product[1]}')
+                            self.scanner_status.text = f'✅ OK'
+                            self.scanner_status.color = [0.16, 0.72, 0.22, 1]
+                            
+                        else:
+                            print(f"❌ NÃO ENCONTRADO")
+                            print(f"{'='*70}\n")
+                            
+                            self.show_message(f'❌ Não cadastrado!')
+                            self.scanner_status.text = f'❌'
+                            self.scanner_status.color = [0.88, 0.32, 0.22, 1]
+                        
+                        pts = code.polygon
+                        if len(pts) == 4:
+                            pts = [(p.x, p.y) for p in pts]
+                            cv2.polylines(frame, [np.array(pts, dtype=np.int32)], 
+                                        True, (0, 255, 0), 3)
+                        
+                        x, y, w, h = code.rect
+                        cv2.putText(frame, barcode_value, (x, y - 10), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                        
+                    except Exception as e:
+                        print(f"❌ Erro: {e}")
+                        continue
+            
+            else:
+                if (current_time - self.last_barcode_time) > 2.5:
+                    self.scanner_status.text = '🟢 Ativo'
+                    self.scanner_status.color = [0.16, 0.72, 0.22, 1]
+            
+            buf = cv2.flip(frame, 0).tobytes()
+            texture = Texture.create(
+                size=(frame.shape[1], frame.shape[0]), 
+                colorfmt='bgr'
+            )
+            texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
+            self.camera_image.texture = texture
+            
+        except Exception as e:
+            print(f"❌ Erro: {e}")
+    
+    def switch_camera(self, instance):
+        """Trocar câmera"""
+        was_scanning = self.scanning
+        
+        if self.scanning:
+            self.scanning = False
+            Clock.unschedule(self.update_camera)
+            if hasattr(self, 'camera_capture') and self.camera_capture:
+                self.camera_capture.release()
+                self.camera_capture = None
+        
+        self.current_camera = (self.current_camera + 1) % 3
+        self.show_message(f'📷 Câmera {self.current_camera}')
+        
+        if was_scanning:
+            Clock.schedule_once(lambda dt: self.restart_scanner(), 0.3)
+    
+    def restart_scanner(self):
+        """Reiniciar scanner"""
+        self.scanning = True
+        self.scan_btn.text = '⏹'
+        self.scan_btn.background_color = [0.88, 0.26, 0.26, 1]
+        self.scanner_status.text = '🟢 Ativo'
+        self.scanner_status.color = [0.16, 0.72, 0.22, 1]
+        Clock.schedule_interval(self.update_camera, 1.0/15.0)
+    
+    def finalize_sale(self, instance):
+        """Finalizar venda"""
+        if not self.cart_items:
+            self.show_message("❌ Carrinho vazio!")
+            return
+        
+        try:
+            paid = float(self.paid_input.text) if self.paid_input.text else 0
+            if paid < self.total_amount:
+                self.show_message("❌ Pagamento insuficiente!")
+                return
+        except ValueError:
+            self.show_message("❌ Valor inválido!")
+            return
+        
+        try:
+            for item in self.cart_items:
+                self.db.add_sale(item['id'], item['qty'], item['price'])
+            
+            self.show_message("✅ Venda finalizada!")
+            Clock.schedule_once(lambda dt: self.reset_sale(), 2)
+            
+        except Exception as e:
+            print(f"Erro: {e}")
+            self.show_message("❌ Erro!")
+    
+    def reset_sale(self):
+        """Reset"""
+        self.cart_items.clear()
+        self.paid_input.text = ''
+        self.update_cart_display()
+        self.load_products()
+    
+    def print_receipt(self, instance):
+        """Imprimir"""
+        if not self.cart_items:
+            self.show_message("❌ Nada para imprimir!")
+            return
+        
+        receipt_text = "=" * 40 + "\n"
+        receipt_text += "   RECIBO DE VENDA\n"
+        receipt_text += "=" * 40 + "\n"
+        receipt_text += f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
+        receipt_text += "-" * 40 + "\n"
+        
+        for item in self.cart_items:
+            receipt_text += f"{item['name']}\n"
+            receipt_text += f"  {item['qty']} x {item['price']:.2f} = {item['total']:.2f} MZN\n"
+        
+        receipt_text += "-" * 40 + "\n"
+        receipt_text += f"TOTAL: {self.total_amount:.2f} MZN\n"
+        
+        try:
+            paid = float(self.paid_input.text) if self.paid_input.text else 0
+            change = paid - self.total_amount
+            receipt_text += f"Pago: {paid:.2f} MZN\n"
+            receipt_text += f"Troco: {change:.2f} MZN\n"
+        except:
+            pass
+        
+        receipt_text += "=" * 40 + "\n"
+        receipt_text += "  Obrigado!\n"
+        receipt_text += "=" * 40
+        
+        self.show_receipt_popup(receipt_text)
+    
+    def show_receipt_popup(self, receipt_text):
+        """Mostrar recibo"""
+        content = BoxLayout(orientation='vertical', padding=20, spacing=15)
+        
+        scroll = ScrollView()
+        receipt_label = Label(
+            text=receipt_text,
+            size_hint_y=None,
+            font_size='14sp',
+            color=[0.2, 0.2, 0.2, 1],
+            halign='left',
+            valign='top'
+        )
+        receipt_label.bind(texture_size=receipt_label.setter('size'))
+        receipt_label.bind(size=lambda s, v: setattr(s, 'text_size', (s.width - 40, None)))
+        scroll.add_widget(receipt_label)
+        
+        btn_layout = BoxLayout(size_hint_y=None, height=50, spacing=10)
+        
+        save_btn = Button(
+            text='💾 Salvar',
+            background_color=[0.2, 0.5, 0.8, 1],
+            bold=True
+        )
         
         close_btn = Button(
-            text="Fechar",
-            size_hint_y=None,
-            height=40,
-            background_color=(0.2, 0.5, 0.8, 1)
+            text='Fechar',
+            background_color=[0.5, 0.5, 0.5, 1],
+            bold=True
         )
         
-        content.add_widget(summary_label)
-        content.add_widget(close_btn)
+        btn_layout.add_widget(save_btn)
+        btn_layout.add_widget(close_btn)
+        
+        content.add_widget(scroll)
+        content.add_widget(btn_layout)
         
         popup = Popup(
-            title="Resumo de Vendas",
+            title='📄 Recibo',
             content=content,
-            size_hint=(0.8, 0.7),
-            background_color=(0.1, 0.1, 0.1, 0.9)
+            size_hint=(0.6, 0.8)
         )
         
-        close_btn.bind(on_press=popup.dismiss)
+        close_btn.bind(on_release=popup.dismiss)
+        save_btn.bind(on_release=lambda x: self.save_receipt(receipt_text, popup))
+        
         popup.open()
+    
+    def save_receipt(self, receipt_text, popup):
+        """Salvar recibo"""
+        try:
+            filename = f"recibo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(receipt_text)
+            
+            self.show_message(f"✅ Salvo: {filename}")
+            popup.dismiss()
+            
+        except Exception as e:
+            print(f"Erro: {e}")
+            self.show_message(f"❌ Erro!")
+    
+    def cancel_sale(self, instance):
+        """Cancelar"""
+        if not self.cart_items:
+            self.show_message("Carrinho vazio!")
+            return
+        
+        content = BoxLayout(orientation='vertical', padding=20, spacing=15)
+        
+        message = Label(
+            text='⚠️ Cancelar venda?',
+            font_size='18sp',
+            color=[0.2, 0.2, 0.2, 1]
+        )
+        
+        btn_layout = BoxLayout(size_hint_y=None, height=50, spacing=10)
+        
+        yes_btn = Button(
+            text='✓ Sim',
+            background_color=[0.9, 0.3, 0.3, 1],
+            bold=True
+        )
+        
+        no_btn = Button(
+            text='✖ Não',
+            background_color=[0.5, 0.5, 0.5, 1],
+            bold=True
+        )
+        
+        btn_layout.add_widget(no_btn)
+        btn_layout.add_widget(yes_btn)
+        
+        content.add_widget(message)
+        content.add_widget(btn_layout)
+        
+        popup = Popup(
+            title='Confirmar',
+            content=content,
+            size_hint=(0.5, 0.4),
+            auto_dismiss=False
+        )
+        
+        yes_btn.bind(on_release=lambda x: self.confirm_cancel(popup))
+        no_btn.bind(on_release=popup.dismiss)
+        
+        popup.open()
+    
+    def confirm_cancel(self, popup):
+        """Confirmar cancelamento"""
+        self.cart_items.clear()
+        self.paid_input.text = ''
+        self.update_cart_display()
+        popup.dismiss()
+        self.show_message("✅ Cancelado!")
+    
+    def show_message(self, message):
+        """Mensagem"""
+        content = BoxLayout(padding=20)
+        content.add_widget(Label(
+            text=message,
+            font_size='16sp',
+            color=[0.2, 0.2, 0.2, 1]
+        ))
+        
+        popup = Popup(
+            title='',
+            content=content,
+            size_hint=(0.35, 0.18),
+            auto_dismiss=True
+        )
+        popup.open()
+        Clock.schedule_once(lambda dt: popup.dismiss(), 1.8)
+    
+    def go_back(self, instance):
+        """Voltar"""
+        if self.camera_detached:
+            self.attach_camera()
+        
+        if self.scanning:
+            self.scanning = False
+            Clock.unschedule(self.update_camera)
+            if hasattr(self, 'camera_capture') and self.camera_capture:
+                self.camera_capture.release()
+                self.camera_capture = None
+        self.manager.current = 'manager'
+    
+    def on_leave(self):
+        """Sair"""
+        if hasattr(self, 'camera_detached') and self.camera_detached:
+            self.attach_camera()
+        
+        if self.scanning:
+            self.scanning = False
+            Clock.unschedule(self.update_camera)
+            if hasattr(self, 'camera_capture') and self.camera_capture:
+                self.camera_capture.release()
+                self.camera_capture = None

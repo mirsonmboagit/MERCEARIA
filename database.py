@@ -93,7 +93,8 @@ class Database:
             print(f"Erro ao validar usuário: {e}")
             return None
     
-    # Métodos para produtos
+    # ==================== MÉTODOS PARA PRODUTOS ====================
+    
     def add_product(self, description, category, existing_stock, sold_stock, sale_price, total_purchase_price, unit_purchase_price, barcode=None, expiry_date=None):
         """Adicionar um novo produto ao banco de dados"""
         try:
@@ -207,16 +208,136 @@ class Database:
         """Obter produtos disponíveis para venda"""
         try:
             self.cursor.execute(""" 
-                SELECT id, description, existing_stock, sale_price
+                SELECT id, description, existing_stock, sale_price, barcode
                 FROM products
                 WHERE existing_stock > 0
+                ORDER BY description ASC
             """)
             return self.cursor.fetchall()
         except sqlite3.Error as e:
             print(f"Erro ao obter produtos para venda: {e}")
             return []
     
-    # Métodos para vendas
+    def get_product_by_barcode(self, barcode):
+        """
+        Buscar produto pelo código de barras - VERSÃO ROBUSTA
+        Tenta várias estratégias de busca para maximizar a chance de encontrar
+        """
+        try:
+            # Limpar o código de barras recebido
+            barcode_clean = barcode.strip() if barcode else ""
+            
+            print(f"\n🔍 DB: Buscando código de barras...")
+            print(f"   Código recebido: '{barcode}' (tamanho: {len(barcode)})")
+            print(f"   Código limpo: '{barcode_clean}' (tamanho: {len(barcode_clean)})")
+            print(f"   Representação: {repr(barcode_clean)}")
+            
+            if not barcode_clean:
+                print(f"   ⚠️ Código vazio após limpeza!")
+                return None
+            
+            # ESTRATÉGIA 1: Busca EXATA (case-sensitive)
+            self.cursor.execute(""" 
+                SELECT id, description, existing_stock, sale_price, barcode
+                FROM products
+                WHERE barcode = ? AND existing_stock > 0
+            """, (barcode_clean,))
+            
+            result = self.cursor.fetchone()
+            
+            if result:
+                print(f"✅ Encontrado com busca EXATA!")
+                print(f"   ID: {result[0]} | Nome: {result[1]}")
+                print(f"   Barcode no BD: '{result[4]}'")
+                return result
+            
+            # ESTRATÉGIA 2: Busca com TRIM no banco (remove espaços do BD também)
+            print(f"   Tentando busca com TRIM...")
+            self.cursor.execute(""" 
+                SELECT id, description, existing_stock, sale_price, barcode
+                FROM products
+                WHERE TRIM(barcode) = ? AND existing_stock > 0
+            """, (barcode_clean,))
+            
+            result = self.cursor.fetchone()
+            
+            if result:
+                print(f"✅ Encontrado com busca TRIM!")
+                print(f"   ID: {result[0]} | Nome: {result[1]}")
+                print(f"   Barcode no BD: '{result[4]}'")
+                return result
+            
+            # ESTRATÉGIA 3: Busca case-insensitive (improvável mas tenta)
+            print(f"   Tentando busca case-insensitive...")
+            self.cursor.execute(""" 
+                SELECT id, description, existing_stock, sale_price, barcode
+                FROM products
+                WHERE LOWER(TRIM(barcode)) = LOWER(?) AND existing_stock > 0
+            """, (barcode_clean,))
+            
+            result = self.cursor.fetchone()
+            
+            if result:
+                print(f"✅ Encontrado com busca case-insensitive!")
+                print(f"   ID: {result[0]} | Nome: {result[1]}")
+                print(f"   Barcode no BD: '{result[4]}'")
+                return result
+            
+            # NÃO ENCONTRADO - Mostrar debug detalhado
+            print(f"\n❌ Código '{barcode_clean}' NÃO ENCONTRADO em nenhuma estratégia")
+            
+            # Listar TODOS os códigos cadastrados para debug
+            self.cursor.execute("""
+                SELECT id, description, barcode 
+                FROM products 
+                WHERE barcode IS NOT NULL AND barcode != ''
+                ORDER BY id
+            """)
+            all_barcodes = self.cursor.fetchall()
+            
+            if all_barcodes:
+                print(f"\n📋 Códigos de barras cadastrados no sistema:")
+                for prod in all_barcodes:
+                    db_code = prod[2]
+                    db_code_clean = db_code.strip() if db_code else ""
+                    
+                    # Comparação detalhada
+                    is_match = db_code_clean == barcode_clean
+                    
+                    print(f"\n   ID {prod[0]}: {prod[1]}")
+                    print(f"      BD Original: '{db_code}' (len: {len(db_code) if db_code else 0})")
+                    print(f"      BD Limpo:    '{db_code_clean}' (len: {len(db_code_clean)})")
+                    print(f"      Buscado:     '{barcode_clean}' (len: {len(barcode_clean)})")
+                    print(f"      Match: {is_match}")
+                    
+                    if db_code and barcode_clean:
+                        print(f"      Bytes BD:     {db_code_clean.encode('utf-8')}")
+                        print(f"      Bytes busca:  {barcode_clean.encode('utf-8')}")
+                        
+                        # Comparação char por char
+                        if len(db_code_clean) == len(barcode_clean):
+                            print(f"      Comparação char por char:")
+                            for i, (c1, c2) in enumerate(zip(db_code_clean, barcode_clean)):
+                                if c1 != c2:
+                                    print(f"         Posição {i}: '{c1}' (ord:{ord(c1)}) != '{c2}' (ord:{ord(c2)})")
+            else:
+                print(f"\n⚠️ NENHUM produto possui código de barras cadastrado!")
+            
+            return None
+            
+        except sqlite3.Error as e:
+            print(f"❌ Erro SQL ao buscar código de barras: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+        except Exception as e:
+            print(f"❌ Erro geral ao buscar código de barras: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    # ==================== MÉTODOS PARA VENDAS ====================
+    
     def add_sale(self, product_id, quantity, sale_price):
         """Adicionar nova venda"""
         try:
@@ -254,63 +375,7 @@ class Database:
         except sqlite3.Error as e:
             print(f"Erro ao obter vendas: {e}")
             return []
-
-    def get_all_managers(self):
-        """Obter todos os gerentes"""
-        try:
-            self.cursor.execute("SELECT username FROM users WHERE role = 'manager'")
-            return [manager[0] for manager in self.cursor.fetchall()]
-        except sqlite3.Error as e:
-            print(f"Erro ao buscar gerentes: {e}")
-            return []
     
-    def delete_manager(self, username):
-        """Excluir um gerente específico"""
-        try:
-            self.cursor.execute("SELECT username FROM users WHERE role = 'manager'")
-            current_managers = self.cursor.fetchall()
-            print(f"Current managers: {current_managers}")
-            
-            self.cursor.execute(
-                "SELECT id FROM users WHERE username = ? AND role = 'manager'", 
-                (username,)
-            )
-            manager = self.cursor.fetchone()
-            
-            print(f"Attempting to delete manager: {username}")
-            print(f"Manager found: {manager}")
-            
-            if not manager:
-                print(f"No manager found with username: {username}")
-                return False, "Gerente não encontrado"
-            
-            self.cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'manager'")
-            manager_count = self.cursor.fetchone()[0]
-            
-            print(f"Total number of managers: {manager_count}")
-            
-            if manager_count <= 1:
-                print("Cannot delete the last manager")
-                return False, "Não é possível excluir o último gerente"
-            
-            self.cursor.execute(
-                "DELETE FROM users WHERE username = ? AND role = 'manager'", 
-                (username,)
-            )
-            self.conn.commit()
-            
-            print(f"Successfully deleted manager: {username}")
-            return True, "Gerente excluído com sucesso"
-        
-        except sqlite3.Error as e:
-            self.conn.rollback()
-            print(f"SQLite error when deleting manager: {e}")
-            return False, f"Erro ao excluir gerente: {str(e)}"
-        except Exception as e:
-            self.conn.rollback()
-            print(f"Unexpected error when deleting manager: {e}")
-            return False, f"Erro inesperado: {str(e)}"
-        
     def get_sales_by_date(self, date_str):
         """Buscar vendas por data específica"""
         try:
@@ -444,7 +509,67 @@ class Database:
         except Exception as e:
             print(f"Erro ao obter resumo mensal: {e}")
             return []
+    
+    # ==================== MÉTODOS PARA GERENTES ====================
 
+    def get_all_managers(self):
+        """Obter todos os gerentes"""
+        try:
+            self.cursor.execute("SELECT username FROM users WHERE role = 'manager'")
+            return [manager[0] for manager in self.cursor.fetchall()]
+        except sqlite3.Error as e:
+            print(f"Erro ao buscar gerentes: {e}")
+            return []
+    
+    def delete_manager(self, username):
+        """Excluir um gerente específico"""
+        try:
+            self.cursor.execute("SELECT username FROM users WHERE role = 'manager'")
+            current_managers = self.cursor.fetchall()
+            print(f"Current managers: {current_managers}")
+            
+            self.cursor.execute(
+                "SELECT id FROM users WHERE username = ? AND role = 'manager'", 
+                (username,)
+            )
+            manager = self.cursor.fetchone()
+            
+            print(f"Attempting to delete manager: {username}")
+            print(f"Manager found: {manager}")
+            
+            if not manager:
+                print(f"No manager found with username: {username}")
+                return False, "Gerente não encontrado"
+            
+            self.cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'manager'")
+            manager_count = self.cursor.fetchone()[0]
+            
+            print(f"Total number of managers: {manager_count}")
+            
+            if manager_count <= 1:
+                print("Cannot delete the last manager")
+                return False, "Não é possível excluir o último gerente"
+            
+            self.cursor.execute(
+                "DELETE FROM users WHERE username = ? AND role = 'manager'", 
+                (username,)
+            )
+            self.conn.commit()
+            
+            print(f"Successfully deleted manager: {username}")
+            return True, "Gerente excluído com sucesso"
+        
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            print(f"SQLite error when deleting manager: {e}")
+            return False, f"Erro ao excluir gerente: {str(e)}"
+        except Exception as e:
+            self.conn.rollback()
+            print(f"Unexpected error when deleting manager: {e}")
+            return False, f"Erro inesperado: {str(e)}"
+    
+    # ==================== CONTEXT MANAGER ====================
+    
     def __enter__(self):
         return self
     

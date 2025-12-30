@@ -61,7 +61,7 @@ class MainApp(App):
         sm.add_widget(LoginScreen(name='login'))
         sm.add_widget(AdminScreen(name='admin'))
         sm.add_widget(AdminSettingsScreen(app=self, name='settings'))  # Adiciona a tela de configurações
-        sm.add_widget(ManagerScreen(name='manager'))
+        sm.add_widget(ModernSalesScreen(name='manager'))
         sm.add_widget(ReportsScreen(name='reports'))
         
         return sm

@@ -16,6 +16,8 @@ from kivy.graphics import Color, Line
 import cv2
 from pyzbar.pyzbar import decode
 from datetime import datetime
+import numpy as np
+import threading
 
 
 from kivy.metrics import dp, sp
@@ -694,6 +696,10 @@ class ProductForm(Popup):
         self.admin_screen = admin_screen
         self.product = product
         self.title = "Adicionar Produto" if not product else "Editar Produto"
+        
+        # Controle do scanner
+        self.scanning = False
+        self.scanner_thread = None
 
         window_width, window_height = Window.size
         popup_width = min(dp(700), window_width * 0.9)
@@ -720,7 +726,7 @@ class ProductForm(Popup):
         # Código de barras
         self.barcode_input = TextInput(
             multiline=False,
-            readonly=False,  # Agora é editável
+            readonly=False,
             height=dp(40),
             size_hint_y=None,
             background_color=(1, 1, 1, 1),
@@ -860,7 +866,6 @@ class ProductForm(Popup):
             # Data de Validade (índice 13)
             if len(product) > 13 and product[13]:
                 try:
-                    # Se vier no formato YYYY-MM-DD, converter para DD/MM/AAAA
                     dt = datetime.strptime(str(product[13]), "%Y-%m-%d")
                     self.expiry_date.text = dt.strftime("%d/%m/%Y")
                 except:
@@ -926,13 +931,11 @@ class ProductForm(Popup):
         """Mostrar formulário para adicionar nova categoria"""
         content = BoxLayout(orientation='vertical', padding=10, spacing=10)
         
-        # Label
         content.add_widget(Label(
             text='Digite o nome da nova categoria:',
             size_hint_y=0.3
         ))
         
-        # Input
         category_input = TextInput(
             multiline=False,
             size_hint_y=0.3,
@@ -940,10 +943,8 @@ class ProductForm(Popup):
         )
         content.add_widget(category_input)
         
-        # Buttons
         button_layout = BoxLayout(size_hint_y=0.4, spacing=10)
         
-        # Popup
         popup = Popup(
             title='Adicionar Categoria',
             content=content,
@@ -966,14 +967,12 @@ class ProductForm(Popup):
         def add_category(instance):
             new_category = category_input.text.strip()
             if new_category:
-                # Adicionar à lista de categorias
                 current_values = list(self.category_spinner.values)
                 if new_category not in current_values:
                     current_values.append(new_category)
                     self.category_spinner.values = sorted(current_values)
                     self.category_spinner.text = new_category
                     
-                    # Atualizar também no admin_screen
                     admin_values = list(self.admin_screen.category_spinner.values)
                     if new_category not in admin_values:
                         admin_values.append(new_category)
@@ -994,176 +993,193 @@ class ProductForm(Popup):
         
         popup.open()
 
-    # ================= SCAN BARCODE =================
+    # ================= SCAN BARCODE (CORRIGIDO COM THREADING) =================
     def scan_barcode(self, instance):
-        """Scanner de código de barras com interface melhorada"""
-        import numpy as np
+        """Iniciar scanner em thread separada"""
+        if self.scanning:
+            self.admin_screen.show_popup("Aviso", "Scanner já está ativo!")
+            return
         
-        current_camera = 0  # Começar com câmera do PC
+        self.scanning = True
+        self.scanner_thread = threading.Thread(target=self._scan_barcode_thread, daemon=True)
+        self.scanner_thread.start()
+    
+    def _scan_barcode_thread(self):
+        """Scanner de código de barras rodando em thread - SEM acesso ao banco aqui"""
+        current_camera = 0
         cap = cv2.VideoCapture(current_camera)
         barcode_value = None
         scan_attempts = 0
-        last_scan_time = 0
         
-        # Verificar se a câmera abriu
         if not cap.isOpened():
-            self.admin_screen.show_popup("Erro", "Não foi possível abrir a câmera!")
+            Clock.schedule_once(lambda dt: self.admin_screen.show_popup(
+                "Erro", "Não foi possível abrir a câmera!"))
+            self.scanning = False
             return
         
-        # Configurar janela
         window_name = "Scanner de Codigo de Barras"
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(window_name, 1000, 600)
         
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            scan_attempts += 1
-            
-            # Criar canvas grande para layout
-            canvas = np.ones((600, 1000, 3), dtype=np.uint8) * 240  # Fundo cinza claro
-            
-            # ===== ÁREA DA CÂMERA (Canto superior direito) =====
-            camera_width = 275
-            camera_height = 200
-            camera_x = 680
-            camera_y = 20
-            
-            # Redimensionar frame da câmera
-            small_frame = cv2.resize(frame, (camera_width, camera_height))
-            canvas[camera_y:camera_y+camera_height, camera_x:camera_x+camera_width] = small_frame
-            
-            # Borda ao redor da câmera
-            cv2.rectangle(canvas, (camera_x-2, camera_y-2), 
-                         (camera_x+camera_width+2, camera_y+camera_height+2), 
-                         (0, 120, 255), 2)
-            
-            # ===== ÁREA DE INFORMAÇÕES (Esquerda) =====
-            info_x = 30
-            info_y = 50
-            
-            # Título (usar FONT_HERSHEY_SIMPLEX com espessura maior para simular bold)
-            cv2.putText(canvas, "SCANNER DE CODIGO DE BARRAS", 
-                       (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (50, 50, 50), 3)
-            
-            # Linha divisória
-            cv2.line(canvas, (info_x, info_y+15), (650, info_y+15), (100, 100, 100), 2)
-            
-            # Status
-            info_y += 70
-            camera_name = "PC (Camera 0)" if current_camera == 0 else "Celular (Camera 1)"
-            cv2.putText(canvas, f"Camera Ativa: {camera_name}", 
-                       (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (50, 50, 50), 2)
-            
-            info_y += 50
-            cv2.putText(canvas, f"Tentativas de Scan: {scan_attempts}", 
-                       (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (80, 80, 80), 1)
-            
-            # Tentar decodificar código de barras
-            decoded_objects = decode(frame)
-            
-            if decoded_objects:
-                for obj in decoded_objects:
-                    barcode_value = obj.data.decode('utf-8')
-                    barcode_type = obj.type
-                    
-                    # Mostrar código encontrado
+        try:
+            while self.scanning:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                scan_attempts += 1
+                
+                # Criar canvas
+                canvas = np.ones((600, 1000, 3), dtype=np.uint8) * 240
+                
+                # Área da câmera
+                camera_width = 275
+                camera_height = 200
+                camera_x = 680
+                camera_y = 20
+                
+                small_frame = cv2.resize(frame, (camera_width, camera_height))
+                canvas[camera_y:camera_y+camera_height, camera_x:camera_x+camera_width] = small_frame
+                
+                cv2.rectangle(canvas, (camera_x-2, camera_y-2), 
+                             (camera_x+camera_width+2, camera_y+camera_height+2), 
+                             (0, 120, 255), 2)
+                
+                # Informações
+                info_x = 30
+                info_y = 50
+                
+                cv2.putText(canvas, "SCANNER DE CODIGO DE BARRAS", 
+                           (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (50, 50, 50), 3)
+                
+                cv2.line(canvas, (info_x, info_y+15), (650, info_y+15), (100, 100, 100), 2)
+                
+                info_y += 70
+                camera_name = "PC (Camera 0)" if current_camera == 0 else "Celular (Camera 1)"
+                cv2.putText(canvas, f"Camera Ativa: {camera_name}", 
+                           (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (50, 50, 50), 2)
+                
+                info_y += 50
+                cv2.putText(canvas, f"Tentativas de Scan: {scan_attempts}", 
+                           (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (80, 80, 80), 1)
+                
+                # Decodificar código de barras
+                decoded_objects = decode(frame)
+                
+                if decoded_objects:
+                    for obj in decoded_objects:
+                        # ✅ LIMPAR O CÓDIGO
+                        barcode_raw = obj.data.decode('utf-8')
+                        barcode_value = ''.join(c for c in barcode_raw if c.isprintable()).strip()
+                        barcode_type = obj.type
+                        
+                        print(f"\n{'='*70}")
+                        print(f"📷 CÓDIGO ESCANEADO NO FORMULÁRIO")
+                        print(f"{'='*70}")
+                        print(f"Código bruto: '{barcode_raw}' (tamanho: {len(barcode_raw)})")
+                        print(f"Código limpo: '{barcode_value}' (tamanho: {len(barcode_value)})")
+                        print(f"Tipo: {barcode_type}")
+                        print(f"{'='*70}\n")
+                        
+                        # Mostrar código encontrado
+                        info_y += 60
+                        cv2.rectangle(canvas, (info_x-10, info_y-35), 
+                                     (650, info_y+20), (50, 200, 50), -1)
+                        cv2.putText(canvas, "CODIGO DETECTADO!", 
+                                   (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 3)
+                        
+                        info_y += 50
+                        cv2.putText(canvas, f"Tipo: {barcode_type}", 
+                                   (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (50, 50, 50), 1)
+                        
+                        info_y += 40
+                        cv2.putText(canvas, f"Codigo: {barcode_value}", 
+                                   (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (50, 50, 50), 2)
+                        
+                        # Desenhar retângulo
+                        points = obj.polygon
+                        if len(points) == 4:
+                            pts = [(int(p.x * camera_width / frame.shape[1]), 
+                                   int(p.y * camera_height / frame.shape[0])) for p in points]
+                            for i in range(4):
+                                cv2.line(small_frame, pts[i], pts[(i+1)%4], (0, 255, 0), 3)
+                            canvas[camera_y:camera_y+camera_height, camera_x:camera_x+camera_width] = small_frame
+                        
+                        break
+                else:
                     info_y += 60
                     cv2.rectangle(canvas, (info_x-10, info_y-35), 
-                                 (650, info_y+20), (50, 200, 50), -1)
-                    cv2.putText(canvas, "CODIGO DETECTADO!", 
-                               (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 3)
-                    
-                    info_y += 50
-                    cv2.putText(canvas, f"Tipo: {barcode_type}", 
-                               (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (50, 50, 50), 1)
-                    
-                    info_y += 40
-                    cv2.putText(canvas, f"Codigo: {barcode_value}", 
+                                 (650, info_y+20), (200, 200, 50), -1)
+                    cv2.putText(canvas, "Aguardando codigo...", 
                                (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (50, 50, 50), 2)
-                    
-                    # Desenhar retângulo no frame pequeno
-                    points = obj.polygon
-                    if len(points) == 4:
-                        pts = [(int(p.x * camera_width / frame.shape[1]), 
-                               int(p.y * camera_height / frame.shape[0])) for p in points]
-                        for i in range(4):
-                            cv2.line(small_frame, pts[i], pts[(i+1)%4], (0, 255, 0), 3)
-                        canvas[camera_y:camera_y+camera_height, camera_x:camera_x+camera_width] = small_frame
-                    
-                    break
-            else:
-                info_y += 60
-                cv2.rectangle(canvas, (info_x-10, info_y-35), 
-                             (650, info_y+20), (200, 200, 50), -1)
-                cv2.putText(canvas, "Aguardando codigo...", 
-                           (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (50, 50, 50), 2)
-            
-            # ===== INSTRUÇÕES =====
-            info_y = 400
-            cv2.putText(canvas, "INSTRUCOES:", 
-                       (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (50, 50, 50), 2)
-            
-            instructions = [
-                "• Posicione o codigo de barras na frente da camera",
-                "• Pressione 'C' para alternar entre cameras",
-                "• Pressione 'Q' ou 'ESC' para sair",
-                "• O codigo sera detectado automaticamente"
-            ]
-            
-            for i, instruction in enumerate(instructions):
-                info_y += 35
-                cv2.putText(canvas, instruction, 
-                           (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (80, 80, 80), 1)
-            
-            # ===== BOTÕES VISUAIS =====
-            button_y = 520
-            
-            # Botão Alternar Câmera
-            cv2.rectangle(canvas, (info_x, button_y), (info_x+280, button_y+50), (0, 120, 255), -1)
-            cv2.rectangle(canvas, (info_x, button_y), (info_x+280, button_y+50), (0, 80, 200), 2)
-            cv2.putText(canvas, "[C] Alternar Camera", 
-                       (info_x+20, button_y+32), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-            
-            # Botão Sair
-            cv2.rectangle(canvas, (info_x+300, button_y), (info_x+500, button_y+50), (200, 50, 50), -1)
-            cv2.rectangle(canvas, (info_x+300, button_y), (info_x+500, button_y+50), (150, 30, 30), 2)
-            cv2.putText(canvas, "[Q] Sair", 
-                       (info_x+340, button_y+32), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-            
-            # Mostrar canvas
-            cv2.imshow(window_name, canvas)
-            
-            # Capturar teclas
-            key = cv2.waitKey(1) & 0xFF
-            
-            if barcode_value or key == ord('q') or key == 27:  # ESC = 27
-                break
-            elif key == ord('c') or key == ord('C'):
-                # Alternar câmera
-                cap.release()
-                current_camera = 1 if current_camera == 0 else 0
-                cap = cv2.VideoCapture(current_camera)
-                scan_attempts = 0
                 
-                if not cap.isOpened():
-                    self.admin_screen.show_popup("Erro", f"Não foi possível abrir a câmera {current_camera}!")
+                # Instruções
+                info_y = 400
+                cv2.putText(canvas, "INSTRUCOES:", 
+                           (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (50, 50, 50), 2)
+                
+                instructions = [
+                    "• Posicione o codigo de barras na frente da camera",
+                    "• Pressione 'C' para alternar entre cameras",
+                    "• Pressione 'Q' ou 'ESC' para sair",
+                    "• O codigo sera detectado automaticamente"
+                ]
+                
+                for i, instruction in enumerate(instructions):
+                    info_y += 35
+                    cv2.putText(canvas, instruction, 
+                               (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (80, 80, 80), 1)
+                
+                # Botões
+                button_y = 520
+                
+                cv2.rectangle(canvas, (info_x, button_y), (info_x+280, button_y+50), (0, 120, 255), -1)
+                cv2.rectangle(canvas, (info_x, button_y), (info_x+280, button_y+50), (0, 80, 200), 2)
+                cv2.putText(canvas, "[C] Alternar Camera", 
+                           (info_x+20, button_y+32), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                
+                cv2.rectangle(canvas, (info_x+300, button_y), (info_x+500, button_y+50), (200, 50, 50), -1)
+                cv2.rectangle(canvas, (info_x+300, button_y), (info_x+500, button_y+50), (150, 30, 30), 2)
+                cv2.putText(canvas, "[Q] Sair", 
+                           (info_x+340, button_y+32), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                
+                cv2.imshow(window_name, canvas)
+                
+                # Capturar teclas
+                key = cv2.waitKey(1) & 0xFF
+                
+                if barcode_value or key == ord('q') or key == 27:
+                    break
+                elif key == ord('c') or key == ord('C'):
+                    cap.release()
                     current_camera = 1 if current_camera == 0 else 0
                     cap = cv2.VideoCapture(current_camera)
+                    scan_attempts = 0
+                    
+                    if not cap.isOpened():
+                        Clock.schedule_once(lambda dt: self.admin_screen.show_popup(
+                            "Erro", f"Não foi possível abrir a câmera {current_camera}!"))
+                        current_camera = 1 if current_camera == 0 else 0
+                        cap = cv2.VideoCapture(current_camera)
         
-        cap.release()
-        cv2.destroyAllWindows()
-        
-        if barcode_value:
-            self.barcode_input.text = barcode_value
-            self.admin_screen.show_popup("Sucesso", f"Código de barras detectado: {barcode_value}")
+        finally:
+            cap.release()
+            cv2.destroyAllWindows()
+            self.scanning = False
+            
+            # ✅ ATUALIZAR UI NA THREAD PRINCIPAL usando Clock
+            if barcode_value:
+                Clock.schedule_once(lambda dt: self._handle_barcode_success(barcode_value))
+
+    def _handle_barcode_success(self, barcode_value):
+        """Tratar sucesso do scan na thread principal (sem threading issues)"""
+        self.barcode_input.text = barcode_value
+        self.admin_screen.show_popup("Sucesso", f"Código detectado: {barcode_value}")
 
     # ================= SAVE =================
     def save_product(self, instance):
         try:
-            # Validar campos obrigatórios
+            # Validações
             if not self.description.text.strip():
                 self.admin_screen.show_popup("Erro", "A descrição é obrigatória!")
                 return
@@ -1188,12 +1204,12 @@ class ProductForm(Popup):
                 self.admin_screen.show_popup("Erro", "O preço de compra unitário é obrigatório!")
                 return
 
-            # Processar data de validade
+            # Data de validade
             expiry = None
             if self.expiry_date.text.strip():
                 try:
                     expiry_dt = datetime.strptime(self.expiry_date.text.strip(), "%d/%m/%Y")
-                    expiry = expiry_dt.strftime("%Y-%m-%d")  # Salvar no formato YYYY-MM-DD
+                    expiry = expiry_dt.strftime("%Y-%m-%d")
                 except ValueError:
                     self.admin_screen.show_popup(
                         "Erro",
@@ -1201,15 +1217,16 @@ class ProductForm(Popup):
                     )
                     return
 
-            # Processar código de barras
-            barcode = self.barcode_input.text.strip() if self.barcode_input.text.strip() else None
+            # Código de barras (limpar)
+            barcode_text = self.barcode_input.text.strip()
+            barcode = ''.join(c for c in barcode_text if c.isprintable()).strip() if barcode_text else None
 
+            # ✅ CRIAR CONEXÃO NOVA NA THREAD PRINCIPAL
             db = Database()
 
             if self.product:
-                # EDITAR PRODUTO EXISTENTE
                 db.update_product(
-                    self.product[0],  # ID
+                    self.product[0],
                     self.description.text.strip(),
                     self.category_spinner.text,
                     int(self.existing_stock.text),
@@ -1222,7 +1239,6 @@ class ProductForm(Popup):
                 )
                 self.admin_screen.show_popup("Sucesso", "Produto atualizado com sucesso!")
             else:
-                # ADICIONAR NOVO PRODUTO
                 db.add_product(
                     self.description.text.strip(),
                     self.category_spinner.text,
@@ -1256,6 +1272,12 @@ class ProductForm(Popup):
             min(dp(700), width * 0.9),
             min(dp(700), height * 0.9)
         )
+    
+    def on_dismiss(self):
+        """Parar scanner ao fechar popup"""
+        self.scanning = False
+        if self.scanner_thread and self.scanner_thread.is_alive():
+            self.scanner_thread.join(timeout=1)
 from kivy.uix.screenmanager import Screen
 from kivy.properties import ObjectProperty, ListProperty
 from kivy.uix.label import Label

@@ -32,7 +32,7 @@ Config.set('kivy', 'window_icon', 'icon4.ico')
 
 from database import Database
 from admin import AdminScreen
-from manager import ManagerScreen
+from manager import ModernSalesScreen
 from login import LoginScreen
 from reports_screen import ReportsScreen
 from settings import AdminSettingsScreen

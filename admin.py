@@ -18,7 +18,20 @@ from pyzbar.pyzbar import decode
 from datetime import datetime
 import numpy as np
 import threading
-
+from kivy.uix.popup import Popup
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.label import Label
+from kivy.uix.button import Button
+from kivy.uix.textinput import TextInput
+from kivy.uix.spinner import Spinner
+from kivy.core.window import Window
+from kivy.metrics import dp, sp
+from datetime import datetime
+import cv2
+from pyzbar.pyzbar import decode
+from database import Database
 
 from kivy.metrics import dp, sp
 from kivy.utils import get_color_from_hex
@@ -272,9 +285,9 @@ Builder.load_string('''
                 orientation: 'vertical'
                 spacing: 2
 
-                # Header da Tabela
+                # Header da Tabela (9 colunas agora)
                 GridLayout:
-                    cols: 8
+                    cols: 9
                     size_hint_y: None
                     height: 50
                     spacing: 0
@@ -289,49 +302,55 @@ Builder.load_string('''
                     Label:
                         text: 'ID'
                         bold: True
-                        size_hint_x: 0.08
+                        size_hint_x: 0.07
                         color: 1, 1, 1, 1
 
                     Label:
                         text: 'Descrição'
                         bold: True
-                        size_hint_x: 0.20
+                        size_hint_x: 0.18
                         color: 1, 1, 1, 1
 
                     Label:
                         text: 'Estoque'
                         bold: True
-                        size_hint_x: 0.10
+                        size_hint_x: 0.09
                         color: 1, 1, 1, 1
 
                     Label:
                         text: 'Vendido'
                         bold: True
-                        size_hint_x: 0.10
+                        size_hint_x: 0.09
+                        color: 1, 1, 1, 1
+
+                    Label:
+                        text: 'Tipo Venda'
+                        bold: True
+                        size_hint_x: 0.09
                         color: 1, 1, 1, 1
 
                     Label:
                         text: 'Preço'
                         bold: True
-                        size_hint_x: 0.12
+                        size_hint_x: 0.11
                         color: 1, 1, 1, 1
 
                     Label:
                         text: 'Lucro'
                         bold: True
-                        size_hint_x: 0.12
+                        size_hint_x: 0.11
                         color: 1, 1, 1, 1
 
                     Label:
                         text: 'Data'
                         bold: True
-                        size_hint_x: 0.13
+                        size_hint_x: 0.12
                         color: 1, 1, 1, 1
 
                     Label:
                         text: 'Ações'
                         bold: True
-                        size_hint_x: 0.15
+                        size_hint_x: 0.14
                         color: 1, 1, 1, 1
 
                 # ScrollView com Dados dos Produtos
@@ -344,13 +363,14 @@ Builder.load_string('''
 
                     GridLayout:
                         id: product_table
-                        cols: 8
+                        cols: 9
                         size_hint_y: None
                         height: self.minimum_height
                         row_default_height: 50
                         row_force_default: True
                         spacing: 0
-                        padding: 0''')
+                        padding: 0
+                    ''')
 class DetailPopup(Popup):
     def __init__(self, product_data, **kwargs):
         super(DetailPopup, self).__init__(**kwargs)
@@ -404,6 +424,15 @@ class DetailPopup(Popup):
         if product_data[6] > 0:  # Avoid division by zero
             profit_percentage = (profit_per_unit / product_data[6]) * 100
 
+        # Peso em KG (índice 15)
+        is_sold_by_weight = product_data[15] if len(product_data) > 15 else 0
+        
+        # Formatação de unidades
+        unit = "kg" if is_sold_by_weight else "un"
+        stock_text = f"{product_data[2]:.2f} {unit}" if is_sold_by_weight else f"{int(product_data[2])} {unit}"
+        sold_text = f"{product_data[3]:.2f} {unit}" if is_sold_by_weight else f"{int(product_data[3])} {unit}"
+        remaining_text = f"{remaining_stock:.2f} {unit}" if is_sold_by_weight else f"{int(remaining_stock)} {unit}"
+
         # Define all fields in a single table
         fields = [
             ("ID", str(product_data[0])),
@@ -411,13 +440,14 @@ class DetailPopup(Popup):
             ("Categoria", product_data[11] if len(product_data) > 11 else "N/A"),
             ("Código de Barras", product_data[12] if len(product_data) > 12 and product_data[12] else "N/A"),
             ("Data de Validade", self.format_date(product_data[13]) if len(product_data) > 13 and product_data[13] else "N/A"),
-            ("Estoque Existente", str(product_data[2])),
-            ("Estoque Vendido", str(product_data[3])),
-            ("Estoque Remanescente", str(remaining_stock)),
-            ("Preço Final de Venda", f"MZN {product_data[4]:.2f}"),
+            ("Tipo de Venda", "Por KG" if is_sold_by_weight else "Por Unidade"),  # NOVO CAMPO
+            ("Estoque Existente", stock_text),
+            ("Estoque Vendido", sold_text),
+            ("Estoque Remanescente", remaining_text),
+            ("Preço Final de Venda", f"MZN {product_data[4]:.2f}/{unit}"),
             ("Preço de Compra Total", f"MZN {product_data[5]:.2f}"),
-            ("Preço de Compra (unitário)", f"MZN {product_data[6]:.2f}"),
-            ("Lucro por Unidade Vendida", f"MZN {profit_per_unit:.2f}"),
+            ("Preço de Compra (unitário)", f"MZN {product_data[6]:.2f}/{unit}"),
+            ("Lucro por Unidade Vendida", f"MZN {profit_per_unit:.2f}/{unit}"),
             ("Total de Lucro", f"MZN {total_profit:.2f}"),
             ("% de Lucro", f"{profit_percentage:.2f}%"),
             ("Data de Adição", self.format_datetime(str(product_data[14])) if len(product_data) > 14 else "N/A")
@@ -428,6 +458,7 @@ class DetailPopup(Popup):
             "Descrição": ([0.2, 0.8, 0.2, 1], [1, 1, 1, 1]),
             "Código de Barras": ([0.3, 0.5, 0.7, 1], [1, 1, 1, 1]),
             "Data de Validade": ([0.9, 0.7, 0.2, 1], [1, 1, 1, 1]),
+            "Tipo de Venda": ([0.8, 0.4, 0.0, 1] if is_sold_by_weight else [0.1, 0.5, 0.8, 1], [1, 1, 1, 1]),  # Laranja se KG, Azul se Unidade
             "Estoque Remanescente": ([0.9, 0.6, 0.1, 1], [1, 1, 1, 1]),
             "Total de Lucro": ([0.0, 0.5, 0.8, 1], [1, 1, 1, 1]),
             "% de Lucro": ([0.7, 0.1, 0.7, 1], [1, 1, 1, 1])
@@ -673,20 +704,7 @@ class DetailPopup(Popup):
         Window.unbind(on_resize=self.on_window_resize)
         return super(DetailPopup, self).on_dismiss()
                 
-from kivy.uix.popup import Popup
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.gridlayout import GridLayout
-from kivy.uix.scrollview import ScrollView
-from kivy.uix.label import Label
-from kivy.uix.button import Button
-from kivy.uix.textinput import TextInput
-from kivy.uix.spinner import Spinner
-from kivy.core.window import Window
-from kivy.metrics import dp, sp
-from datetime import datetime
-import cv2
-from pyzbar.pyzbar import decode
-from database import Database
+
 
 
 class ProductForm(Popup):
@@ -700,10 +718,13 @@ class ProductForm(Popup):
         # Controle do scanner
         self.scanning = False
         self.scanner_thread = None
+        
+        # Importar CheckBox aqui se necessário
+        from kivy.uix.checkbox import CheckBox
 
         window_width, window_height = Window.size
         popup_width = min(dp(700), window_width * 0.9)
-        popup_height = min(dp(700), window_height * 0.9)
+        popup_height = min(dp(750), window_height * 0.9)
 
         self.size = (popup_width, popup_height)
         self.size_hint = (None, None)
@@ -822,6 +843,28 @@ class ProductForm(Popup):
             text="0"
         )
 
+        # NOVO: Switch para definir se é vendido por KG
+        self.is_sold_by_weight_switch = CheckBox(
+            size_hint_x=0.2,
+            active=False
+        )
+        
+        switch_layout = BoxLayout(
+            size_hint_y=None,
+            height=dp(40),
+            spacing=10
+        )
+        switch_layout.add_widget(Label(
+            text="Vendido por KG",
+            size_hint_x=0.6,
+            halign='left',
+            valign='middle',
+            text_size=(None, None),
+            color=[0, 0, 0, 1]
+        ))
+        switch_layout.add_widget(self.is_sold_by_weight_switch)
+        switch_layout.add_widget(Label(size_hint_x=0.2))  # Spacer
+
         self.sale_price = TextInput(
             multiline=False,
             input_filter='float',
@@ -870,6 +913,10 @@ class ProductForm(Popup):
                     self.expiry_date.text = dt.strftime("%d/%m/%Y")
                 except:
                     self.expiry_date.text = str(product[13])
+            
+            # Vendido por KG (índice 15)
+            if len(product) > 15:
+                self.is_sold_by_weight_switch.active = bool(product[15])
 
         form_layout = GridLayout(cols=2, spacing=[10, 15], size_hint_y=None)
         form_layout.bind(minimum_height=form_layout.setter('height'))
@@ -881,6 +928,7 @@ class ProductForm(Popup):
             ("Categoria*", category_layout),
             ("Estoque Existente*", self.existing_stock),
             ("Estoque Vendido", self.sold_stock),
+            ("", switch_layout),  # SWITCH VENDIDO POR KG
             ("Preço Final de Venda*", self.sale_price),
             ("Preço de Compra Total*", self.total_purchase_price),
             ("Preço de Compra Unitário*", self.unit_purchase_price)
@@ -1221,6 +1269,9 @@ class ProductForm(Popup):
             barcode_text = self.barcode_input.text.strip()
             barcode = ''.join(c for c in barcode_text if c.isprintable()).strip() if barcode_text else None
 
+            # Vendido por KG
+            is_sold_by_weight = self.is_sold_by_weight_switch.active
+
             # ✅ CRIAR CONEXÃO NOVA NA THREAD PRINCIPAL
             db = Database()
 
@@ -1229,26 +1280,28 @@ class ProductForm(Popup):
                     self.product[0],
                     self.description.text.strip(),
                     self.category_spinner.text,
-                    int(self.existing_stock.text),
-                    int(self.sold_stock.text),
+                    float(self.existing_stock.text),  # Agora aceita decimal
+                    float(self.sold_stock.text),      # Agora aceita decimal
                     float(self.sale_price.text),
                     float(self.total_purchase_price.text),
                     float(self.unit_purchase_price.text),
                     barcode,
-                    expiry
+                    expiry,
+                    is_sold_by_weight  # NOVO PARÂMETRO
                 )
                 self.admin_screen.show_popup("Sucesso", "Produto atualizado com sucesso!")
             else:
                 db.add_product(
                     self.description.text.strip(),
                     self.category_spinner.text,
-                    int(self.existing_stock.text),
-                    int(self.sold_stock.text),
+                    float(self.existing_stock.text),  # Agora aceita decimal
+                    float(self.sold_stock.text),      # Agora aceita decimal
                     float(self.sale_price.text),
                     float(self.total_purchase_price.text),
                     float(self.unit_purchase_price.text),
                     barcode,
-                    expiry
+                    expiry,
+                    is_sold_by_weight  # NOVO PARÂMETRO
                 )
                 self.admin_screen.show_popup("Sucesso", "Produto adicionado com sucesso!")
 
@@ -1270,7 +1323,7 @@ class ProductForm(Popup):
     def on_window_resize(self, instance, width, height):
         self.size = (
             min(dp(700), width * 0.9),
-            min(dp(700), height * 0.9)
+            min(dp(750), height * 0.9)
         )
     
     def on_dismiss(self):
@@ -1278,16 +1331,7 @@ class ProductForm(Popup):
         self.scanning = False
         if self.scanner_thread and self.scanner_thread.is_alive():
             self.scanner_thread.join(timeout=1)
-from kivy.uix.screenmanager import Screen
-from kivy.properties import ObjectProperty, ListProperty
-from kivy.uix.label import Label
-from kivy.uix.button import Button
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.popup import Popup
-from kivy.graphics import Color, Line
-from kivy.clock import Clock
-from datetime import datetime
-from database import Database
+
 
 
 class AdminScreen(Screen):
@@ -1374,19 +1418,19 @@ class AdminScreen(Screen):
             products_to_display = self.products
 
         for product in products_to_display:
-            # ID - 0.08
+            # ID - 0.07
             id_label = Label(
                 text=str(product[0]), 
-                size_hint_x=0.08, 
+                size_hint_x=0.07, 
                 color=[0, 0, 0, 1],
                 halign='center',
                 valign='middle'
             )
             
-            # Descrição - 0.20
+            # Descrição - 0.18
             desc_label = Label(
                 text=product[1], 
-                size_hint_x=0.20, 
+                size_hint_x=0.18, 
                 color=[0, 0, 0, 1],
                 text_size=(None, None), 
                 shorten=True, 
@@ -1394,55 +1438,73 @@ class AdminScreen(Screen):
                 valign='middle'
             )
             
-            # Estoque - 0.10
+            # Verificar se é vendido por peso (índice 15)
+            is_sold_by_weight = product[15] if len(product) > 15 else 0
+            unit_label = "kg" if is_sold_by_weight else "un"
+            
+            # Estoque - 0.09
+            stock_value = product[2]
+            stock_text = f"{stock_value:.2f} {unit_label}" if is_sold_by_weight else f"{int(stock_value)} {unit_label}"
             stock_label = Label(
-                text=str(product[2]), 
-                size_hint_x=0.10, 
+                text=stock_text, 
+                size_hint_x=0.09, 
                 color=[0, 0, 0, 1],
                 halign='center',
                 valign='middle'
             )
             
-            # Vendido - 0.10
+            # Vendido - 0.09
+            sold_value = product[3]
+            sold_text = f"{sold_value:.2f} {unit_label}" if is_sold_by_weight else f"{int(sold_value)} {unit_label}"
             sold_stock_label = Label(
-                text=str(product[3]), 
-                size_hint_x=0.10, 
+                text=sold_text, 
+                size_hint_x=0.09, 
                 color=[0, 0, 0, 1],
                 halign='center',
                 valign='middle'
             )
             
-            # Preço - 0.12
+            # Tipo de Venda - 0.09 - ATUALIZADO
+            tipo_venda_label = Label(
+                text="Por KG" if is_sold_by_weight else "Por Unidade", 
+                size_hint_x=0.09, 
+                color=[0.8, 0.4, 0.0, 1] if is_sold_by_weight else [0.1, 0.5, 0.8, 1],
+                halign='center',
+                valign='middle',
+                bold=True
+            )
+            
+            # Preço - 0.11
             price_label = Label(
                 text=f"MZN {product[4]:.2f}", 
-                size_hint_x=0.12, 
+                size_hint_x=0.11, 
                 color=[0, 0, 0, 1],
                 halign='center',
                 valign='middle'
             )
             
-            # Lucro - 0.12
+            # Lucro - 0.11
             total_profit_label = Label(
                 text=f"MZN {product[8]:.2f}", 
-                size_hint_x=0.12, 
+                size_hint_x=0.11, 
                 color=[0, 0, 0, 1],
                 halign='center',
                 valign='middle'
             )
             
-            # Data de Adição - 0.13
+            # Data de Adição - 0.12
             date_added = str(product[14]) if len(product) > 14 and product[14] else "N/A"
             date_label = Label(
                 text=self.format_datetime(date_added), 
-                size_hint_x=0.13, 
+                size_hint_x=0.12, 
                 color=[0, 0, 0, 1],
                 halign='center',
                 valign='middle',
                 font_size='11sp'
             )
             
-            # Ações - 0.15
-            action_layout = BoxLayout(spacing=5, size_hint_x=0.15)
+            # Ações - 0.14
+            action_layout = BoxLayout(spacing=5, size_hint_x=0.14)
             
             # Criar botões com bordas coloridas
             detail_btn = self.create_detail_button(product[0])
@@ -1454,11 +1516,12 @@ class AdminScreen(Screen):
             action_layout.add_widget(edit_btn)
             action_layout.add_widget(delete_btn)
             
-            # Adicionar todos os widgets à tabela (8 colunas)
+            # Adicionar todos os widgets à tabela (9 colunas)
             self.product_table.add_widget(id_label)
             self.product_table.add_widget(desc_label)
             self.product_table.add_widget(stock_label)
             self.product_table.add_widget(sold_stock_label)
+            self.product_table.add_widget(tipo_venda_label)  # TIPO DE VENDA
             self.product_table.add_widget(price_label)
             self.product_table.add_widget(total_profit_label)
             self.product_table.add_widget(date_label)
@@ -1618,6 +1681,28 @@ class AdminScreen(Screen):
         if 'reports' in self.manager.screen_names:
             reports_screen = self.manager.get_screen('reports')
             Clock.schedule_once(lambda dt: reports_screen.select_date_range(), 0.1)
+    
+    def toggle_kg_products(self):
+        """Alternar entre mostrar todos os produtos e apenas produtos com peso"""
+        if not hasattr(self, 'showing_kg_only'):
+            self.showing_kg_only = False
+        
+        self.showing_kg_only = not self.showing_kg_only
+        
+        if self.showing_kg_only:
+            # Mostrar apenas produtos com peso > 0
+            kg_products = self.db.get_products_by_weight()
+            if kg_products:
+                self.update_product_table(kg_products)
+                self.show_popup("Filtro Ativo", f"Mostrando {len(kg_products)} produto(s) com peso cadastrado.")
+            else:
+                self.show_popup("Aviso", "Nenhum produto com peso cadastrado encontrado.")
+                self.showing_kg_only = False
+                self.update_product_table(self.products)
+        else:
+            # Mostrar todos os produtos
+            self.update_product_table(self.products)
+            self.show_popup("Filtro Removido", "Mostrando todos os produtos.")
     
     def logout(self):
         self.manager.current = "login"

@@ -1736,7 +1736,7 @@ class ModernSalesScreen(Screen):
             if hasattr(self, 'camera_capture') and self.camera_capture:
                 self.camera_capture.release()
                 self.camera_capture = None
-        self.manager.current = 'manager'
+        self.manager.current = 'login'
     
     def on_leave(self):
         """Sair"""

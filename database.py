@@ -46,29 +46,39 @@ class Database:
                     ("admin", default_password, "admin")
                 )
             
-            # Tabela de produtos (atualizada com barcode e expiry_date)
+            # Tabela de produtos (atualizada com barcode, expiry_date, weight_kg e is_sold_by_weight)
             self.cursor.execute(''' 
             CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 description TEXT NOT NULL,
                 category TEXT,
-                existing_stock INTEGER NOT NULL,
-                sold_stock INTEGER DEFAULT 0,
+                existing_stock REAL NOT NULL,
+                sold_stock REAL DEFAULT 0,
                 sale_price REAL NOT NULL,
                 total_purchase_price REAL NOT NULL,
                 unit_purchase_price REAL NOT NULL,
                 profit_per_unit REAL NOT NULL,
                 barcode TEXT,
                 expiry_date TEXT,
-                date_added TEXT NOT NULL
+                date_added TEXT NOT NULL,
+                is_sold_by_weight INTEGER DEFAULT 0
             )''')
             
-            # Tabela de vendas
+            # Verificar e adicionar colunas necessárias
+            self.cursor.execute("PRAGMA table_info(products)")
+            columns = [column[1] for column in self.cursor.fetchall()]
+            
+            if 'is_sold_by_weight' not in columns:
+                print("⚙️ Adicionando coluna 'is_sold_by_weight' à tabela products...")
+                self.cursor.execute("ALTER TABLE products ADD COLUMN is_sold_by_weight INTEGER DEFAULT 0")
+                print("✅ Coluna 'is_sold_by_weight' adicionada com sucesso!")
+            
+            # Tabela de vendas (atualizada para aceitar quantidades decimais)
             self.cursor.execute(''' 
             CREATE TABLE IF NOT EXISTS sales (
                 id INTEGER PRIMARY KEY,
                 product_id INTEGER NOT NULL,
-                quantity INTEGER NOT NULL,
+                quantity REAL NOT NULL,
                 sale_price REAL NOT NULL,
                 total_price REAL NOT NULL,
                 sale_date TEXT NOT NULL,
@@ -95,24 +105,23 @@ class Database:
     
     # ==================== MÉTODOS PARA PRODUTOS ====================
     
-    def add_product(self, description, category, existing_stock, sold_stock, sale_price, total_purchase_price, unit_purchase_price, barcode=None, expiry_date=None):
+    def add_product(self, description, category, existing_stock, sold_stock, sale_price, total_purchase_price, unit_purchase_price, barcode=None, expiry_date=None, is_sold_by_weight=False):
         """Adicionar um novo produto ao banco de dados"""
         try:
             profit_per_unit = sale_price - unit_purchase_price
-            # Adicionar a data atual como data de adição
             date_added = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
             self.cursor.execute(''' 
-            INSERT INTO products (description, category, existing_stock, sold_stock, sale_price, total_purchase_price, unit_purchase_price, profit_per_unit, barcode, expiry_date, date_added)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
-            ''', (description, category, existing_stock, sold_stock, sale_price, total_purchase_price, unit_purchase_price, profit_per_unit, barcode, expiry_date, date_added))
+            INSERT INTO products (description, category, existing_stock, sold_stock, sale_price, total_purchase_price, unit_purchase_price, profit_per_unit, barcode, expiry_date, date_added, is_sold_by_weight)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+            ''', (description, category, existing_stock, sold_stock, sale_price, total_purchase_price, unit_purchase_price, profit_per_unit, barcode, expiry_date, date_added, 1 if is_sold_by_weight else 0))
             
             self.conn.commit()
             print(f"✅ Produto adicionado com sucesso! ID: {self.cursor.lastrowid}")
         except sqlite3.Error as e:
             print(f"Erro ao adicionar produto: {e}")
     
-    def update_product(self, id, description, category, existing_stock, sold_stock, sale_price, total_purchase_price, unit_purchase_price, barcode=None, expiry_date=None):
+    def update_product(self, id, description, category, existing_stock, sold_stock, sale_price, total_purchase_price, unit_purchase_price, barcode=None, expiry_date=None, is_sold_by_weight=False):
         """Atualizar produto existente"""
         try:
             profit_per_unit = sale_price - unit_purchase_price
@@ -120,10 +129,10 @@ class Database:
                 """UPDATE products SET 
                    description = ?, category = ?, existing_stock = ?, sold_stock = ?, 
                    sale_price = ?, total_purchase_price = ?, unit_purchase_price = ?, 
-                   profit_per_unit = ?, barcode = ?, expiry_date = ? 
+                   profit_per_unit = ?, barcode = ?, expiry_date = ?, is_sold_by_weight = ?
                    WHERE id = ?""", 
                 (description, category, existing_stock, sold_stock, sale_price, 
-                 total_purchase_price, unit_purchase_price, profit_per_unit, barcode, expiry_date, id)
+                 total_purchase_price, unit_purchase_price, profit_per_unit, barcode, expiry_date, 1 if is_sold_by_weight else 0, id)
             )
             self.conn.commit()
             print(f"✅ Produto {id} atualizado com sucesso!")
@@ -160,19 +169,19 @@ class Database:
                     p.category,                     -- 11
                     p.barcode,                      -- 12
                     p.expiry_date,                  -- 13
-                    p.date_added                    -- 14
+                    p.date_added,                   -- 14
+                    p.is_sold_by_weight             -- 15 (NOVO)
                 FROM products p
                 ORDER BY p.id DESC
             """)
             results = self.cursor.fetchall()
             
-            # Debug: imprimir o número de colunas
             if results:
                 print(f"\n📊 DEBUG get_all_products:")
                 print(f"   - Total de produtos: {len(results)}")
                 print(f"   - Colunas por produto: {len(results[0])}")
                 print(f"   - Primeiro produto (ID {results[0][0]}): {results[0][1]}")
-                print(f"   - Índices: ID={results[0][0]}, Desc={results[0][1]}, Barcode={results[0][12]}, Validade={results[0][13]}, Data={results[0][14]}")
+                print(f"   - Vendido por peso: {'Sim' if results[0][15] else 'Não'}")
             
             return results
         except sqlite3.Error as e:
@@ -196,7 +205,8 @@ class Database:
                     p.category,
                     p.barcode,
                     p.expiry_date,
-                    p.date_added
+                    p.date_added,
+                    p.is_sold_by_weight
                 FROM products p
                 WHERE p.id = ?""", (id,))
             return self.cursor.fetchone()
@@ -208,7 +218,7 @@ class Database:
         """Obter produtos disponíveis para venda"""
         try:
             self.cursor.execute(""" 
-                SELECT id, description, existing_stock, sale_price, barcode
+                SELECT id, description, existing_stock, sale_price, barcode, is_sold_by_weight
                 FROM products
                 WHERE existing_stock > 0
                 ORDER BY description ASC
@@ -218,27 +228,50 @@ class Database:
             print(f"Erro ao obter produtos para venda: {e}")
             return []
     
-    def get_product_by_barcode(self, barcode):
-        """
-        Buscar produto pelo código de barras - VERSÃO ROBUSTA
-        Tenta várias estratégias de busca para maximizar a chance de encontrar
-        """
+    def get_products_by_weight(self):
+        """Obter apenas produtos vendidos por peso (kg)"""
         try:
-            # Limpar o código de barras recebido
+            self.cursor.execute(""" 
+                SELECT 
+                    p.id, p.description, p.existing_stock, p.sold_stock, 
+                    p.sale_price, p.total_purchase_price, p.unit_purchase_price, 
+                    p.profit_per_unit,
+                    (p.profit_per_unit * p.sold_stock) as total_profit,
+                    CASE 
+                        WHEN p.sold_stock > 0 THEN (p.profit_per_unit * p.sold_stock * 100) / (p.unit_purchase_price * p.sold_stock)
+                        ELSE 0 
+                    END as profit_percentage,
+                    (p.sale_price - p.unit_purchase_price) / p.unit_purchase_price * 100 as price_percentage,
+                    p.category,
+                    p.barcode,
+                    p.expiry_date,
+                    p.date_added,
+                    p.is_sold_by_weight
+                FROM products p
+                WHERE p.is_sold_by_weight = 1
+                ORDER BY p.description ASC
+            """)
+            return self.cursor.fetchall()
+        except sqlite3.Error as e:
+            print(f"Erro ao obter produtos por peso: {e}")
+            return []
+    
+    def get_product_by_barcode(self, barcode):
+        """Buscar produto pelo código de barras - VERSÃO ROBUSTA"""
+        try:
             barcode_clean = barcode.strip() if barcode else ""
             
             print(f"\n🔍 DB: Buscando código de barras...")
             print(f"   Código recebido: '{barcode}' (tamanho: {len(barcode)})")
             print(f"   Código limpo: '{barcode_clean}' (tamanho: {len(barcode_clean)})")
-            print(f"   Representação: {repr(barcode_clean)}")
             
             if not barcode_clean:
                 print(f"   ⚠️ Código vazio após limpeza!")
                 return None
             
-            # ESTRATÉGIA 1: Busca EXATA (case-sensitive)
+            # ESTRATÉGIA 1: Busca EXATA
             self.cursor.execute(""" 
-                SELECT id, description, existing_stock, sale_price, barcode
+                SELECT id, description, existing_stock, sale_price, barcode, is_sold_by_weight
                 FROM products
                 WHERE barcode = ? AND existing_stock > 0
             """, (barcode_clean,))
@@ -248,13 +281,12 @@ class Database:
             if result:
                 print(f"✅ Encontrado com busca EXATA!")
                 print(f"   ID: {result[0]} | Nome: {result[1]}")
-                print(f"   Barcode no BD: '{result[4]}'")
+                print(f"   Vendido por peso: {'Sim' if result[5] else 'Não'}")
                 return result
             
-            # ESTRATÉGIA 2: Busca com TRIM no banco (remove espaços do BD também)
-            print(f"   Tentando busca com TRIM...")
+            # ESTRATÉGIA 2: Busca com TRIM
             self.cursor.execute(""" 
-                SELECT id, description, existing_stock, sale_price, barcode
+                SELECT id, description, existing_stock, sale_price, barcode, is_sold_by_weight
                 FROM products
                 WHERE TRIM(barcode) = ? AND existing_stock > 0
             """, (barcode_clean,))
@@ -264,13 +296,12 @@ class Database:
             if result:
                 print(f"✅ Encontrado com busca TRIM!")
                 print(f"   ID: {result[0]} | Nome: {result[1]}")
-                print(f"   Barcode no BD: '{result[4]}'")
+                print(f"   Vendido por peso: {'Sim' if result[5] else 'Não'}")
                 return result
             
-            # ESTRATÉGIA 3: Busca case-insensitive (improvável mas tenta)
-            print(f"   Tentando busca case-insensitive...")
+            # ESTRATÉGIA 3: Busca case-insensitive
             self.cursor.execute(""" 
-                SELECT id, description, existing_stock, sale_price, barcode
+                SELECT id, description, existing_stock, sale_price, barcode, is_sold_by_weight
                 FROM products
                 WHERE LOWER(TRIM(barcode)) = LOWER(?) AND existing_stock > 0
             """, (barcode_clean,))
@@ -280,66 +311,23 @@ class Database:
             if result:
                 print(f"✅ Encontrado com busca case-insensitive!")
                 print(f"   ID: {result[0]} | Nome: {result[1]}")
-                print(f"   Barcode no BD: '{result[4]}'")
+                print(f"   Vendido por peso: {'Sim' if result[5] else 'Não'}")
                 return result
             
-            # NÃO ENCONTRADO - Mostrar debug detalhado
-            print(f"\n❌ Código '{barcode_clean}' NÃO ENCONTRADO em nenhuma estratégia")
-            
-            # Listar TODOS os códigos cadastrados para debug
-            self.cursor.execute("""
-                SELECT id, description, barcode 
-                FROM products 
-                WHERE barcode IS NOT NULL AND barcode != ''
-                ORDER BY id
-            """)
-            all_barcodes = self.cursor.fetchall()
-            
-            if all_barcodes:
-                print(f"\n📋 Códigos de barras cadastrados no sistema:")
-                for prod in all_barcodes:
-                    db_code = prod[2]
-                    db_code_clean = db_code.strip() if db_code else ""
-                    
-                    # Comparação detalhada
-                    is_match = db_code_clean == barcode_clean
-                    
-                    print(f"\n   ID {prod[0]}: {prod[1]}")
-                    print(f"      BD Original: '{db_code}' (len: {len(db_code) if db_code else 0})")
-                    print(f"      BD Limpo:    '{db_code_clean}' (len: {len(db_code_clean)})")
-                    print(f"      Buscado:     '{barcode_clean}' (len: {len(barcode_clean)})")
-                    print(f"      Match: {is_match}")
-                    
-                    if db_code and barcode_clean:
-                        print(f"      Bytes BD:     {db_code_clean.encode('utf-8')}")
-                        print(f"      Bytes busca:  {barcode_clean.encode('utf-8')}")
-                        
-                        # Comparação char por char
-                        if len(db_code_clean) == len(barcode_clean):
-                            print(f"      Comparação char por char:")
-                            for i, (c1, c2) in enumerate(zip(db_code_clean, barcode_clean)):
-                                if c1 != c2:
-                                    print(f"         Posição {i}: '{c1}' (ord:{ord(c1)}) != '{c2}' (ord:{ord(c2)})")
-            else:
-                print(f"\n⚠️ NENHUM produto possui código de barras cadastrado!")
-            
+            print(f"\n❌ Código '{barcode_clean}' NÃO ENCONTRADO")
             return None
             
         except sqlite3.Error as e:
             print(f"❌ Erro SQL ao buscar código de barras: {e}")
-            import traceback
-            traceback.print_exc()
             return None
         except Exception as e:
             print(f"❌ Erro geral ao buscar código de barras: {e}")
-            import traceback
-            traceback.print_exc()
             return None
     
     # ==================== MÉTODOS PARA VENDAS ====================
     
     def add_sale(self, product_id, quantity, sale_price):
-        """Adicionar nova venda"""
+        """Adicionar nova venda (aceita quantidades decimais para produtos por kg)"""
         try:
             total_price = quantity * sale_price
             sale_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -526,7 +514,6 @@ class Database:
         try:
             self.cursor.execute("SELECT username FROM users WHERE role = 'manager'")
             current_managers = self.cursor.fetchall()
-            print(f"Current managers: {current_managers}")
             
             self.cursor.execute(
                 "SELECT id FROM users WHERE username = ? AND role = 'manager'", 
@@ -534,20 +521,13 @@ class Database:
             )
             manager = self.cursor.fetchone()
             
-            print(f"Attempting to delete manager: {username}")
-            print(f"Manager found: {manager}")
-            
             if not manager:
-                print(f"No manager found with username: {username}")
                 return False, "Gerente não encontrado"
             
             self.cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'manager'")
             manager_count = self.cursor.fetchone()[0]
             
-            print(f"Total number of managers: {manager_count}")
-            
             if manager_count <= 1:
-                print("Cannot delete the last manager")
                 return False, "Não é possível excluir o último gerente"
             
             self.cursor.execute(
@@ -556,16 +536,13 @@ class Database:
             )
             self.conn.commit()
             
-            print(f"Successfully deleted manager: {username}")
             return True, "Gerente excluído com sucesso"
         
         except sqlite3.Error as e:
             self.conn.rollback()
-            print(f"SQLite error when deleting manager: {e}")
             return False, f"Erro ao excluir gerente: {str(e)}"
         except Exception as e:
             self.conn.rollback()
-            print(f"Unexpected error when deleting manager: {e}")
             return False, f"Erro inesperado: {str(e)}"
     
     # ==================== CONTEXT MANAGER ====================

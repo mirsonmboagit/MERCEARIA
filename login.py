@@ -63,23 +63,7 @@ Builder.load_string('''
                         size_hint: 0.5, 0.5
                         pos_hint: {'center_x': 0.5, 'center_y': 0.5}
 
-                # Slide 4 - Texto
-                BoxLayout:
-                    canvas.before:
-                        Color:
-                            rgba: 0.2, 0.3, 0.5, 1
-                        Rectangle:
-                            pos: self.pos
-                            size: self.size
-
-                    Label:
-                        text: 'Bem-vindo ao\\nSistema de Gestão\\nMERCEARIA'
-                        
-                        font_size: 32
-                        bold: True
-                        halign: 'center'
-                        valign: 'middle'
-                        text_size: self.size
+                
 
         # LINHA SEPARADORA VERTICAL
         Widget:
@@ -100,6 +84,8 @@ Builder.load_string('''
             padding: 50
             spacing: 20
             size_hint_x: 0.45
+                    
+                 
 
             # LOGO/NOME DO SISTEMA
             BoxLayout:
@@ -109,7 +95,7 @@ Builder.load_string('''
                 spacing: 5
 
                 Label:
-                    text: '🛒 MERCEARIA'
+                    text: 'MERCEARIA'
                     font_size: 32
                     bold: True
                     color: 0.9, 0.4, 0.1, 1
@@ -143,7 +129,7 @@ Builder.load_string('''
                 height: 80
 
                 Label:
-                    text: 'Utilizador'
+                    text: 'Utilizador:'
                     color: 0.2, 0.2, 0.2, 1
                     size_hint_y: None
                     height: 20
@@ -154,7 +140,7 @@ Builder.load_string('''
                 TextInput:
                     id: username
                     multiline: False
-                    hint_text: 'Digite seu e-mail'
+                    hint_text: 'Digite seu utilizador'
                     background_color: 0, 0, 0, 0
                     padding: [10, 8]
                     canvas.before:
@@ -181,7 +167,7 @@ Builder.load_string('''
                 height: 80
 
                 Label:
-                    text: 'Senha'
+                    text: 'Palavra-passe:'
                     color: 0.2, 0.2, 0.2, 1
                     size_hint_y: None
                     height: 20
@@ -193,7 +179,7 @@ Builder.load_string('''
                     id: password
                     password: True
                     multiline: False
-                    hint_text: 'Digite sua senha'
+                    hint_text: 'Digite sua palavra-passe'
                     background_color: 0, 0, 0, 0
                     padding: [10, 8]
                     on_text_validate: root.login()

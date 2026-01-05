@@ -13,11 +13,17 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.uix.button import Button
 from kivy.graphics import Color, Line
+from kivy.uix.widget import Widget
 import cv2
+from kivy.uix.checkbox import CheckBox
 from pyzbar.pyzbar import decode
 from datetime import datetime
 import numpy as np
 import threading
+from kivy.uix.image import Image
+from kivy.graphics.texture import Texture
+from kivy.graphics import Color, Rectangle, RoundedRectangle
+from kivy.uix.widget import Widget
 from kivy.uix.popup import Popup
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
@@ -52,6 +58,28 @@ from kivy.lang import Builder
 import pandas as pd
 import xlsxwriter
 import os
+import threading
+import time
+from datetime import datetime
+
+import cv2
+from pyzbar.pyzbar import decode
+
+from kivy.clock import Clock
+from kivy.core.window import Window
+from kivy.graphics import Color, Rectangle
+from kivy.graphics.texture import Texture
+from kivy.metrics import dp, sp
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
+from kivy.uix.checkbox import CheckBox
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.image import Image
+from kivy.uix.label import Label
+from kivy.uix.popup import Popup
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.spinner import Spinner
+from kivy.uix.textinput import TextInput
 
 
 
@@ -75,217 +103,215 @@ Builder.load_string('''
         spacing: 0
 
         # =====================================================
-        # HEADER - Título e Botões de Navegação
+        # HEADER - Navegação Principal
         # =====================================================
         BoxLayout:
-            size_hint_y: 0.15
-            padding: [20, 10, 20, 0]
-            spacing: 10
+            size_hint_y: 0.08
+            padding: [20, 0]
+            spacing: 0
+            canvas.before:
+                Color:
+                    rgba: 0.2, 0.3, 0.5, 1  # Azul escuro profissional
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
 
-            # Título Principal
-            Label:
-                text: 'Painel do Administrador'
-                font_size: '26sp'
-                bold: True
-                size_hint_x: 0.7
-                halign: 'left'
-                valign: 'middle'
-                text_size: self.size
-                color: 0.2, 0.2, 0.2, 1
-
-            # Botões de Navegação
+            # Logo/Título à Esquerda
             BoxLayout:
-                size_hint_x: 0.3
-                spacing: 10
+                size_hint_x: 0.25
+                padding: [0, 5]
 
-                Widget:
+                Label:
+                    text: 'Sistema de Inventário'
+                    font_size: '20sp'
+                    bold: True
+                    color: 1, 1, 1, 1
+                    halign: 'left'
+                    valign: 'middle'
+                    text_size: self.size
 
-                # Botão Definições
+            # Botões de Navegação no Centro
+            BoxLayout:
+                size_hint_x: 0.5
+                spacing: 15
+                padding: [20, 8]
+
+                Button:
+                    text: 'Relatórios'
+                    size_hint_x: 1
+                    bold: True
+                    color: 1, 1, 1, 1
+                    background_color: 0, 0, 0, 0
+                    on_release: root.generate_report()
+                    canvas.before:
+                        Color:
+                            rgba: 0.3, 0.4, 0.6, 1
+                        RoundedRectangle:
+                            pos: self.pos
+                            size: self.size
+                            radius: [8]
+
                 Button:
                     text: 'Definições'
-                    size_hint: None, None
-                    size: 145, 35
+                    size_hint_x: 1
                     bold: True
-                    color: 0.2, 0.2, 0.2, 1
+                    color: 1, 1, 1, 1
                     background_color: 0, 0, 0, 0
                     on_release: root.go_to_definitions()
                     canvas.before:
                         Color:
-                            rgba: 0.2, 0.2, 0.2, 1
-                        Line:
-                            rounded_rectangle: (*self.pos, *self.size, 10)
-                            width: 1.2
+                            rgba: 0.3, 0.4, 0.6, 1
+                        RoundedRectangle:
+                            pos: self.pos
+                            size: self.size
+                            radius: [8]
 
-                # Botão Sair
+            # Botão Sair à Direita
+            BoxLayout:
+                size_hint_x: 0.25
+                padding: [0, 8]
+
+                Widget:
+
                 Button:
-                    text: '<-- SAIR --'
+                    text: '← Sair'
                     size_hint: None, None
-                    size: 150, 40
+                    size: 120, 40
                     bold: True
-                    color: 0.9, 0.3, 0.3, 1
+                    color: 1, 1, 1, 1
                     background_color: 0, 0, 0, 0
                     on_release: root.logout()
                     canvas.before:
                         Color:
                             rgba: 0.9, 0.3, 0.3, 1
-                        Line:
-                            rounded_rectangle: (*self.pos, *self.size, 10)
-                            width: 1.2
-
-        # =====================================================
-        # BARRA DE PESQUISA E FILTROS
-        # =====================================================
-        BoxLayout:
-            size_hint_y: 0.1
-            padding: [20, 5, 20, 5]
-            spacing: 10
-
-            # Área de Pesquisa e Filtros
-            BoxLayout:
-                size_hint_x: 0.7
-                spacing: 10
-
-                # Campo de Pesquisa
-                TextInput:
-                    id: search_input
-                    hint_text: 'Pesquisar por descrição, ID ou código de barras'
-                    multiline: False
-                    padding: [10, 5]
-                    background_color: 0, 0, 0, 0
-                    foreground_color: 0.2, 0.2, 0.2, 1
-                    cursor_color: 0.2, 0.2, 0.2, 1
-                    on_text: root.filter_products(self.text)
-                    canvas.before:
-                        Color:
-                            rgba: 1, 1, 1, 1
-                        RoundedRectangle:
-                            pos: self.pos
-                            size: self.size
-                            radius: [10]
-                        Color:
-                            rgba: 0, 0, 0, 1
-                        Line:
-                            rounded_rectangle: (*self.pos, *self.size, 10)
-                            width: 1.2
-
-                # Filtro de Categorias
-                Spinner:
-                    id: category_spinner
-                    text: 'Categorias'
-                    values: ['Todas', 'Eletrônicos', 'Alimentos', 'Vestuário', 'Outros']
-                    size_hint_x: 0.4
-                    color: 0.2, 0.2, 0.2, 1
-                    background_color: 0, 0, 0, 0
-                    on_text: root.filter_products(search_input.text)
-                    canvas.before:
-                        Color:
-                            rgba: 1, 1, 1, 1
                         RoundedRectangle:
                             pos: self.pos
                             size: self.size
                             radius: [8]
-                        Color:
-                            rgba: 0.2, 0.2, 0.2, 1
-                        Line:
-                            rounded_rectangle: (*self.pos, *self.size, 8)
-                            width: 1.2
-
-            Widget:
-                size_hint_x: 0.05
-
-            # Botões de Ação
-            BoxLayout:
-                size_hint_x: 0.3
-                spacing: 10
-
-                # Botão Produtos em KG
-                Button:
-                    text: 'Produtos/KG'
-                    bold: True
-                    color: 0.8, 0.4, 0.0, 1
-                    background_color: 0, 0, 0, 0
-                    on_release: root.toggle_kg_products()
-                    canvas.before:
-                        Color:
-                            rgba: 1, 1, 1, 1
-                        RoundedRectangle:
-                            pos: self.pos
-                            size: self.size
-                            radius: [10]
-                        Color:
-                            rgba: 0.8, 0.4, 0.0, 1
-                        Line:
-                            rounded_rectangle: (*self.pos, *self.size, 10)
-                            width: 1.5
-
-                # Botão Adicionar Produto
-                Button:
-                    text: 'Adicionar'
-                    bold: True
-                    color: 0.1, 0.6, 0.2, 1
-                    background_color: 0, 0, 0, 0
-                    on_release: root.add_product()
-                    canvas.before:
-                        Color:
-                            rgba: 1, 1, 1, 1
-                        RoundedRectangle:
-                            pos: self.pos
-                            size: self.size
-                            radius: [10]
-                        Color:
-                            rgba: 0.1, 0.6, 0.2, 1
-                        Line:
-                            rounded_rectangle: (*self.pos, *self.size, 10)
-                            width: 1.5
-
-                # Botão Gerar Relatório
-                Button:
-                    text: 'Relatório'
-                    bold: True
-                    color: 0.2, 0.2, 0.2, 1
-                    background_color: 0, 0, 0, 0
-                    on_release: root.generate_report()
-                    canvas.before:
-                        Color:
-                            rgba: 1, 1, 1, 1
-                        RoundedRectangle:
-                            pos: self.pos
-                            size: self.size
-                            radius: [10]
-                        Color:
-                            rgba: 0.2, 0.2, 0.2, 1
-                        Line:
-                            rounded_rectangle: (*self.pos, *self.size, 10)
-                            width: 1.2
 
         # =====================================================
-        # TÍTULO DA SEÇÃO DE PRODUTOS
+        # BARRA DE TÍTULO E FERRAMENTAS
         # =====================================================
         BoxLayout:
-            size_hint_y: 0.05
-            padding: [20, 0, 20, 0]
+            size_hint_y: 0.08
+            padding: [20, 10]
+            spacing: 10
 
+            # Título da Seção
             Label:
-                text: 'Lista de Produtos'
-                font_size: '20sp'
+                text: 'Gestão de Produtos'
+                font_size: '22sp'
                 bold: True
+                size_hint_x: 0.3
                 halign: 'left'
                 valign: 'middle'
                 text_size: self.size
                 color: 0.2, 0.2, 0.2, 1
 
+            Widget:
+                size_hint_x: 0.1
+
+            # Botões de Ação
+            BoxLayout:
+                size_hint_x: 0.6
+                spacing: 10
+
+                Button:
+                    text: 'Filtrar Tipo'
+                    bold: True
+                    color: 1, 1, 1, 1
+                    background_color: 0, 0, 0, 0
+                    on_release: root.toggle_kg_products()
+                    canvas.before:
+                        Color:
+                            rgba: 0.8, 0.4, 0.0, 1
+                        RoundedRectangle:
+                            pos: self.pos
+                            size: self.size
+                            radius: [10]
+
+                Button:
+                    text: '+ Adicionar Produto'
+                    bold: True
+                    color: 1, 1, 1, 1
+                    background_color: 0, 0, 0, 0
+                    on_release: root.add_product()
+                    canvas.before:
+                        Color:
+                            rgba: 0.1, 0.7, 0.2, 1
+                        RoundedRectangle:
+                            pos: self.pos
+                            size: self.size
+                            radius: [10]
+
+        # =====================================================
+        # BARRA DE PESQUISA E FILTROS
+        # =====================================================
+        BoxLayout:
+            size_hint_y: 0.08
+            padding: [20, 5, 20, 10]
+            spacing: 15
+
+            # Campo de Pesquisa
+            TextInput:
+                id: search_input
+                hint_text: '🔍 Pesquisar por descrição, ID ou código de barras...'
+                multiline: False
+                padding: [15, 10]
+                size_hint_x: 0.65
+                background_color: 0, 0, 0, 0
+                foreground_color: 0.2, 0.2, 0.2, 1
+                cursor_color: 0.2, 0.2, 0.2, 1
+                font_size: '15sp'
+                on_text: root.filter_products(self.text)
+                canvas.before:
+                    Color:
+                        rgba: 1, 1, 1, 1
+                    RoundedRectangle:
+                        pos: self.pos
+                        size: self.size
+                        radius: [10]
+                    Color:
+                        rgba: 0.7, 0.7, 0.7, 1
+                    Line:
+                        rounded_rectangle: (*self.pos, *self.size, 10)
+                        width: 1.5
+
+            # Filtro de Categorias
+            Spinner:
+                id: category_spinner
+                text: '📁 Todas as Categorias'
+                values: ['Todas', 'Eletrônicos', 'Alimentos', 'Vestuário', 'Outros']
+                size_hint_x: 0.35
+                color: 0.2, 0.2, 0.2, 1
+                background_color: 0, 0, 0, 0
+                font_size: '15sp'
+                on_text: root.filter_products(search_input.text)
+                canvas.before:
+                    Color:
+                        rgba: 1, 1, 1, 1
+                    RoundedRectangle:
+                        pos: self.pos
+                        size: self.size
+                        radius: [10]
+                    Color:
+                        rgba: 0.7, 0.7, 0.7, 1
+                    Line:
+                        rounded_rectangle: (*self.pos, *self.size, 10)
+                        width: 1.5
+
         # =====================================================
         # TABELA DE PRODUTOS
         # =====================================================
         BoxLayout:
-            size_hint_y: 0.7
+            size_hint_y: 0.76
             padding: [20, 0, 20, 20]
 
             BoxLayout:
                 orientation: 'vertical'
                 spacing: 2
 
-                # Header da Tabela (9 colunas agora)
+                # Header da Tabela (9 colunas)
                 GridLayout:
                     cols: 9
                     size_hint_y: None
@@ -366,8 +392,8 @@ Builder.load_string('''
                         cols: 9
                         size_hint_y: None
                         height: self.minimum_height
-                        row_default_height: 50
-                        row_force_default: True
+                        row_default_height: 40
+                        
                         spacing: 0
                         padding: 0
                     ''')
@@ -708,70 +734,274 @@ class DetailPopup(Popup):
 
 
 class ProductForm(Popup):
+    """
+    Formulário para adicionar/editar produtos com scanner de código de barras integrado.
+    
+    Features:
+    - Scanner de código de barras em tempo real usando OpenCV e pyzbar
+    - Suporte para múltiplas câmeras
+    - Sistema de detecção otimizado (mesmo do ModernSalesScreen)
+    - Validação de dados completa
+    - Interface responsiva e profissional
+    """
+    
     def __init__(self, admin_screen, product=None, **kwargs):
         super(ProductForm, self).__init__(**kwargs)
-
+        
+        # Referências
         self.admin_screen = admin_screen
         self.product = product
-        self.title = "Adicionar Produto" if not product else "Editar Produto"
         
-        # Controle do scanner
+        # Controle da câmera e scanner (igual ao ModernSalesScreen)
         self.scanning = False
-        self.scanner_thread = None
+        self.camera_capture = None
+        self.current_camera = 0
+        self.last_barcode = None
+        self.last_barcode_time = 0
         
-        # Importar CheckBox aqui se necessário
-        from kivy.uix.checkbox import CheckBox
-
+        # Configuração do popup
+        self._setup_popup()
+        
+        # Construir interface
+        self._build_ui()
+        
+        # Preencher dados se estiver editando
+        if self.product:
+            self._populate_fields()
+        
+        # Bind de eventos
+        Window.bind(on_resize=self._on_window_resize)
+    
+    # ==================== CONFIGURAÇÃO ====================
+    
+    def _setup_popup(self):
+        """Configurar propriedades básicas do popup"""
+        self.title = "Adicionar Produto" if not self.product else "Editar Produto"
+        
         window_width, window_height = Window.size
-        popup_width = min(dp(700), window_width * 0.9)
-        popup_height = min(dp(750), window_height * 0.9)
-
+        popup_width = min(dp(1100), window_width * 0.95)
+        popup_height = min(dp(800), window_height * 0.9)
+        
         self.size = (popup_width, popup_height)
         self.size_hint = (None, None)
-        self.auto_dismiss = True
+        self.auto_dismiss = False
         self.background_color = (1, 1, 1, 1)
-
-        Window.bind(on_resize=self.on_window_resize)
-
-        container = ScrollView()
-        main_layout = BoxLayout(
+    
+    # ==================== CONSTRUÇÃO DA UI ====================
+    
+    def _build_ui(self):
+        """Construir interface completa"""
+        main_container = BoxLayout(
+            orientation='horizontal',
+            spacing=dp(15),
+            padding=[dp(15), dp(15)]
+        )
+        
+        # Seção da câmera (esquerda)
+        camera_section = self._build_camera_section()
+        main_container.add_widget(camera_section)
+        
+        # Seção do formulário (direita)
+        form_section = self._build_form_section()
+        main_container.add_widget(form_section)
+        
+        self.content = main_container
+    
+    def _build_camera_section(self):
+        """Construir seção da câmera"""
+        section = BoxLayout(
             orientation='vertical',
-            spacing=15,
-            padding=[20, 20],
+            size_hint_x=0.4,
+            spacing=dp(10)
+        )
+        
+        # Título
+        title = Label(
+            text='📷 Scanner de Código de Barras',
+            size_hint_y=None,
+            height=dp(40),
+            color=[0.1, 0.1, 0.1, 1],
+            font_size=sp(16),
+            bold=True,
+            halign='center',
+            valign='middle'
+        )
+        section.add_widget(title)
+        
+        # Container da câmera com fundo
+        camera_container = BoxLayout(
+            size_hint_y=0.65,
+            padding=dp(2)
+        )
+        
+        with camera_container.canvas.before:
+            Color(0.89, 0.89, 0.89, 1)
+            self.camera_outer_border = RoundedRectangle(
+                pos=camera_container.pos,
+                size=camera_container.size,
+                radius=[dp(6)]
+            )
+        
+        camera_container.bind(
+            pos=self._update_camera_outer,
+            size=self._update_camera_outer
+        )
+        
+        camera_inner = BoxLayout(padding=0)
+        with camera_inner.canvas.before:
+            Color(0.12, 0.12, 0.12, 1)
+            self.camera_bg = RoundedRectangle(
+                pos=camera_inner.pos,
+                size=camera_inner.size,
+                radius=[dp(5)]
+            )
+        camera_inner.bind(
+            pos=self._update_camera_bg,
+            size=self._update_camera_bg
+        )
+        
+        # Widget de imagem para exibir frames da câmera
+        self.camera_image = Image(
+            allow_stretch=True,
+            keep_ratio=True
+        )
+        
+        camera_inner.add_widget(self.camera_image)
+        camera_container.add_widget(camera_inner)
+        section.add_widget(camera_container)
+        
+        # Status do scanner
+        self.scanner_status = Label(
+            text='⚫ Câmera Inativa',
+            size_hint_y=None,
+            height=dp(35),
+            color=[0.5, 0.5, 0.5, 1],
+            font_size=sp(14),
+            bold=True,
+            halign='center',
+            valign='middle'
+        )
+        section.add_widget(self.scanner_status)
+        
+        # Botões de controle
+        buttons_layout = BoxLayout(
+            size_hint_y=None,
+            height=dp(50),
+            spacing=dp(10)
+        )
+        
+        self.scan_btn = Button(
+            text='▶️ INICIAR',
+            background_color=(0.16, 0.66, 0.26, 1),
+            color=(1, 1, 1, 1),
+            bold=True,
+            background_normal='',
+            font_size=sp(15)
+        )
+        self.scan_btn.bind(on_release=self._toggle_scanner)
+        
+        self.switch_camera_btn = Button(
+            text='🔄 TROCAR CÂMERA',
+            background_color=(0.26, 0.46, 0.66, 1),
+            color=(1, 1, 1, 1),
+            bold=True,
+            background_normal='',
+            font_size=sp(15)
+        )
+        self.switch_camera_btn.bind(on_release=self._switch_camera)
+        
+        buttons_layout.add_widget(self.scan_btn)
+        buttons_layout.add_widget(self.switch_camera_btn)
+        section.add_widget(buttons_layout)
+        
+        # Instruções
+        instructions = Label(
+            text='💡 Ligue a câmera e posicione\no código de barras na frente',
+            size_hint_y=None,
+            height=dp(50),
+            color=[0.4, 0.4, 0.4, 1],
+            font_size=sp(12),
+            halign='center',
+            valign='middle'
+        )
+        section.add_widget(instructions)
+        
+        return section
+    
+    def _update_camera_outer(self, instance, value):
+        """Atualizar borda externa da câmera"""
+        self.camera_outer_border.pos = instance.pos
+        self.camera_outer_border.size = instance.size
+    
+    def _update_camera_bg(self, instance, value):
+        """Atualizar fundo da câmera"""
+        self.camera_bg.pos = instance.pos
+        self.camera_bg.size = instance.size
+    
+    def _build_form_section(self):
+        """Construir seção do formulário"""
+        section = BoxLayout(
+            orientation='vertical',
+            size_hint_x=0.6,
+            spacing=dp(10)
+        )
+        
+        # Título
+        title = Label(
+            text='📝 Dados do Produto',
+            size_hint_y=None,
+            height=dp(40),
+            color=[0.1, 0.1, 0.1, 1],
+            font_size=sp(16),
+            bold=True,
+            halign='left',
+            valign='middle',
+            text_size=(None, None),
+            padding=[dp(10), 0]
+        )
+        section.add_widget(title)
+        
+        # ScrollView com campos
+        scroll = ScrollView()
+        form_layout = BoxLayout(
+            orientation='vertical',
+            spacing=dp(12),
+            padding=[dp(10), dp(5)],
             size_hint_y=None
         )
-        main_layout.bind(minimum_height=main_layout.setter('height'))
-
-        # ================= CAMPOS =================
-
-        # Código de barras
+        form_layout.bind(minimum_height=form_layout.setter('height'))
+        
+        # Criar campos
+        self._create_form_fields()
+        
+        # Grid de campos
+        fields_grid = self._build_fields_grid()
+        form_layout.add_widget(fields_grid)
+        
+        # Botões de ação
+        buttons = self._build_action_buttons()
+        form_layout.add_widget(buttons)
+        
+        scroll.add_widget(form_layout)
+        section.add_widget(scroll)
+        
+        return section
+    
+    def _create_form_fields(self):
+        """Criar todos os campos do formulário"""
+        # Código de barras (readonly)
         self.barcode_input = TextInput(
             multiline=False,
-            readonly=False,
+            readonly=True,
             height=dp(40),
             size_hint_y=None,
-            background_color=(1, 1, 1, 1),
-            padding=[10, 10, 0, 0],
-            font_size=sp(16),
-            hint_text="Digite ou escaneie o código de barras"
+            background_color=(0.95, 0.95, 0.95, 1),
+            foreground_color=(0.1, 0.1, 0.1, 1),
+            padding=[dp(10), dp(10), 0, 0],
+            font_size=sp(15),
+            hint_text="Será detectado automaticamente"
         )
-
-        scan_btn = Button(
-            text="SCANNER",
-            size_hint_x=0.35,
-            background_color=(0.2, 0.5, 0.8, 1),
-            color=(1, 1, 1, 1)
-        )
-        scan_btn.bind(on_release=self.scan_barcode)
-
-        barcode_layout = BoxLayout(
-            size_hint_y=None,
-            height=dp(40),
-            spacing=5
-        )
-        barcode_layout.add_widget(self.barcode_input)
-        barcode_layout.add_widget(scan_btn)
-
+        
         # Data de validade
         self.expiry_date = TextInput(
             hint_text="DD/MM/AAAA",
@@ -779,161 +1009,176 @@ class ProductForm(Popup):
             height=dp(40),
             size_hint_y=None,
             background_color=(1, 1, 1, 1),
-            padding=[10, 10, 0, 0],
-            font_size=sp(16)
+            foreground_color=(0.1, 0.1, 0.1, 1),
+            padding=[dp(10), dp(10), 0, 0],
+            font_size=sp(15)
         )
-
+        
+        # Descrição
         self.description = TextInput(
+            hint_text="Nome do produto",
             multiline=False,
             height=dp(40),
             size_hint_y=None,
             background_color=(1, 1, 1, 1),
-            padding=[10, 10, 0, 0],
-            font_size=sp(16)
+            foreground_color=(0.1, 0.1, 0.1, 1),
+            padding=[dp(10), dp(10), 0, 0],
+            font_size=sp(15)
         )
-
-        category_layout = BoxLayout(
+        
+        # Categoria com botão adicionar
+        self.category_layout = self._build_category_field()
+        
+        # Estoque existente
+        self.existing_stock = TextInput(
+            hint_text="Quantidade",
+            multiline=False,
+            input_filter='float',
+            height=dp(40),
+            size_hint_y=None,
+            background_color=(1, 1, 1, 1),
+            foreground_color=(0.1, 0.1, 0.1, 1),
+            font_size=sp(15)
+        )
+        
+        # Estoque vendido (readonly)
+        self.sold_stock = TextInput(
+            multiline=False,
+            input_filter='float',
+            height=dp(40),
+            size_hint_y=None,
+            readonly=True,
+            background_color=(0.95, 0.95, 0.95, 1),
+            foreground_color=(0.3, 0.3, 0.3, 1),
+            font_size=sp(15),
+            text="0"
+        )
+        
+        # Switch vendido por peso
+        self.weight_switch_layout = self._build_weight_switch()
+        
+        # Preços
+        self.sale_price = TextInput(
+            hint_text="Preço de venda",
+            multiline=False,
+            input_filter='float',
+            height=dp(40),
+            size_hint_y=None,
+            background_color=(1, 1, 1, 1),
+            foreground_color=(0.1, 0.1, 0.1, 1),
+            font_size=sp(15)
+        )
+        
+        self.total_purchase_price = TextInput(
+            hint_text="Preço compra total",
+            multiline=False,
+            input_filter='float',
+            height=dp(40),
+            size_hint_y=None,
+            background_color=(1, 1, 1, 1),
+            foreground_color=(0.1, 0.1, 0.1, 1),
+            font_size=sp(15)
+        )
+        
+        self.unit_purchase_price = TextInput(
+            hint_text="Preço unitário",
+            multiline=False,
+            input_filter='float',
+            height=dp(40),
+            size_hint_y=None,
+            background_color=(1, 1, 1, 1),
+            foreground_color=(0.1, 0.1, 0.1, 1),
+            font_size=sp(15)
+        )
+    
+    def _build_category_field(self):
+        """Construir campo de categoria com botão adicionar"""
+        layout = BoxLayout(
             orientation='horizontal',
             size_hint_y=None,
             height=dp(40),
-            spacing=5
+            spacing=dp(5)
         )
-
+        
         categories = [
             c for c in self.admin_screen.category_spinner.values
             if c != 'Todas'
         ]
-
+        
         self.category_spinner = Spinner(
             text='Selecionar',
             values=categories,
             size_hint_x=0.8,
             background_color=(1, 1, 1, 1),
-            font_size=sp(16)
+            color=(0.1, 0.1, 0.1, 1),
+            font_size=sp(15),
+            background_normal=''
         )
-
+        
         add_category_btn = Button(
             text="+",
             size_hint_x=0.2,
             background_color=(0.3, 0.7, 0.3, 1),
-            color=(1, 1, 1, 1)
+            color=(1, 1, 1, 1),
+            bold=True,
+            background_normal=''
         )
-        add_category_btn.bind(on_release=self.show_category_form)
-
-        category_layout.add_widget(self.category_spinner)
-        category_layout.add_widget(add_category_btn)
-
-        self.existing_stock = TextInput(
-            multiline=False,
-            input_filter='int',
-            height=dp(40),
+        add_category_btn.bind(on_release=self._show_category_form)
+        
+        layout.add_widget(self.category_spinner)
+        layout.add_widget(add_category_btn)
+        
+        return layout
+    
+    def _build_weight_switch(self):
+        """Construir switch de vendido por peso"""
+        layout = BoxLayout(
             size_hint_y=None,
-            background_color=(1, 1, 1, 1),
-            font_size=sp(16)
-        )
-
-        self.sold_stock = TextInput(
-            multiline=False,
-            input_filter='int',
             height=dp(40),
-            size_hint_y=None,
-            readonly=True,
-            background_color=(0.95, 0.95, 0.95, 1),
-            font_size=sp(16),
-            text="0"
-        )
-
-        # NOVO: Switch para definir se é vendido por KG
-        self.is_sold_by_weight_switch = CheckBox(
-            size_hint_x=0.2,
-            active=False
+            spacing=dp(10)
         )
         
-        switch_layout = BoxLayout(
-            size_hint_y=None,
-            height=dp(40),
-            spacing=10
-        )
-        switch_layout.add_widget(Label(
-            text="Vendido por KG",
+        layout.add_widget(Label(
+            text="⚖️ Vendido por KG",
             size_hint_x=0.6,
             halign='left',
             valign='middle',
             text_size=(None, None),
-            color=[0, 0, 0, 1]
+            color=[0.1, 0.1, 0.1, 1],
+            font_size=sp(15)
         ))
-        switch_layout.add_widget(self.is_sold_by_weight_switch)
-        switch_layout.add_widget(Label(size_hint_x=0.2))  # Spacer
-
-        self.sale_price = TextInput(
-            multiline=False,
-            input_filter='float',
-            height=dp(40),
-            size_hint_y=None,
-            background_color=(1, 1, 1, 1),
-            font_size=sp(16)
+        
+        self.is_sold_by_weight_switch = CheckBox(
+            size_hint_x=0.2,
+            active=False
         )
-
-        self.total_purchase_price = TextInput(
-            multiline=False,
-            input_filter='float',
-            height=dp(40),
-            size_hint_y=None,
-            background_color=(1, 1, 1, 1),
-            font_size=sp(16)
+        layout.add_widget(self.is_sold_by_weight_switch)
+        layout.add_widget(Label(size_hint_x=0.2))
+        
+        return layout
+    
+    def _build_fields_grid(self):
+        """Construir grid com todos os campos"""
+        grid = GridLayout(
+            cols=2,
+            spacing=[dp(10), dp(12)],
+            size_hint_y=None
         )
-
-        self.unit_purchase_price = TextInput(
-            multiline=False,
-            input_filter='float',
-            height=dp(40),
-            size_hint_y=None,
-            background_color=(1, 1, 1, 1),
-            font_size=sp(16)
-        )
-
-        # Preencher dados ao editar
-        if product:
-            self.description.text = product[1]
-            self.category_spinner.text = product[11] if len(product) > 11 else "Selecionar"
-            self.existing_stock.text = str(product[2])
-            self.sold_stock.text = str(product[3])
-            self.sale_price.text = str(product[4])
-            self.total_purchase_price.text = str(product[5])
-            self.unit_purchase_price.text = str(product[6])
-            
-            # Código de Barras (índice 12)
-            if len(product) > 12 and product[12]:
-                self.barcode_input.text = str(product[12])
-            
-            # Data de Validade (índice 13)
-            if len(product) > 13 and product[13]:
-                try:
-                    dt = datetime.strptime(str(product[13]), "%Y-%m-%d")
-                    self.expiry_date.text = dt.strftime("%d/%m/%Y")
-                except:
-                    self.expiry_date.text = str(product[13])
-            
-            # Vendido por KG (índice 15)
-            if len(product) > 15:
-                self.is_sold_by_weight_switch.active = bool(product[15])
-
-        form_layout = GridLayout(cols=2, spacing=[10, 15], size_hint_y=None)
-        form_layout.bind(minimum_height=form_layout.setter('height'))
-
+        grid.bind(minimum_height=grid.setter('height'))
+        
         fields = [
-            ("Código de Barras", barcode_layout),
+            ("Código de Barras", self.barcode_input),
             ("Data de Validade", self.expiry_date),
             ("Descrição*", self.description),
-            ("Categoria*", category_layout),
+            ("Categoria*", self.category_layout),
             ("Estoque Existente*", self.existing_stock),
             ("Estoque Vendido", self.sold_stock),
-            ("", switch_layout),  # SWITCH VENDIDO POR KG
-            ("Preço Final de Venda*", self.sale_price),
-            ("Preço de Compra Total*", self.total_purchase_price),
-            ("Preço de Compra Unitário*", self.unit_purchase_price)
+            ("", self.weight_switch_layout),
+            ("Preço de Venda*", self.sale_price),
+            ("Preço Compra Total*", self.total_purchase_price),
+            ("Preço Compra Unit.*", self.unit_purchase_price)
         ]
-
+        
         for label_text, widget in fields:
             label = Label(
                 text=label_text,
@@ -941,97 +1186,317 @@ class ProductForm(Popup):
                 height=dp(40),
                 halign='left',
                 valign='middle',
-                text_size=(popup_width * 0.4, None),
+                text_size=(dp(150), None),
                 bold='*' in label_text,
-                font_size=sp(16)
+                font_size=sp(14),
+                color=[0.1, 0.1, 0.1, 1]
             )
-            form_layout.add_widget(label)
-            form_layout.add_widget(widget)
-
-        main_layout.add_widget(form_layout)
-
-        button_layout = BoxLayout(
-            spacing=15,
+            grid.add_widget(label)
+            grid.add_widget(widget)
+        
+        return grid
+    
+    def _build_action_buttons(self):
+        """Construir botões de ação"""
+        layout = BoxLayout(
+            spacing=dp(12),
             size_hint_y=None,
-            height=dp(50)
+            height=dp(50),
+            padding=[0, dp(15), 0, 0]
         )
-
+        
         cancel_btn = Button(
-            text="Cancelar",
-            background_color=(0.7, 0.7, 0.7, 1)
+            text="❌ Cancelar",
+            background_color=(0.7, 0.3, 0.3, 1),
+            color=(1, 1, 1, 1),
+            bold=True,
+            background_normal=''
         )
         cancel_btn.bind(on_release=self.dismiss)
-
+        
         save_btn = Button(
-            text="Salvar",
-            background_color=(0.1, 0.6, 0.2, 1)
+            text="✅ Salvar",
+            background_color=(0.2, 0.7, 0.3, 1),
+            color=(1, 1, 1, 1),
+            bold=True,
+            background_normal=''
         )
-        save_btn.bind(on_release=self.save_product)
-
-        button_layout.add_widget(cancel_btn)
-        button_layout.add_widget(save_btn)
-
-        main_layout.add_widget(button_layout)
-        container.add_widget(main_layout)
-        self.content = container
-
-    def show_category_form(self, instance):
-        """Mostrar formulário para adicionar nova categoria"""
-        content = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        save_btn.bind(on_release=self._save_product)
+        
+        layout.add_widget(cancel_btn)
+        layout.add_widget(save_btn)
+        
+        return layout
+    
+    # ==================== CONTROLE DA CÂMERA (MESMO SISTEMA DO MODERNSALESSCREEN) ====================
+    
+    def _toggle_scanner(self, instance):
+        """Ligar/desligar scanner (igual ao ModernSalesScreen)"""
+        if not self.scanning:
+            self.scanning = True
+            self.scan_btn.text = '⏹️ PARAR'
+            self.scan_btn.background_color = (0.88, 0.26, 0.26, 1)
+            self.scanner_status.text = '🟢 Scanner Ativo'
+            self.scanner_status.color = (0.16, 0.72, 0.22, 1)
+            Clock.schedule_interval(self._update_camera, 1.0/15.0)
+        else:
+            self.scanning = False
+            self.scan_btn.text = '▶️ INICIAR'
+            self.scan_btn.background_color = (0.16, 0.66, 0.26, 1)
+            self.scanner_status.text = '⚫ Scanner Inativo'
+            self.scanner_status.color = (0.5, 0.5, 0.5, 1)
+            Clock.unschedule(self._update_camera)
+            if self.camera_capture:
+                self.camera_capture.release()
+                self.camera_capture = None
+            self.camera_image.texture = None
+    
+    def _update_camera(self, dt):
+        """Atualizar câmera e detectar códigos (IDÊNTICO ao ModernSalesScreen)"""
+        if not self.scanning:
+            return
+        
+        # Inicializar câmera se necessário
+        if self.camera_capture is None:
+            try:
+                self.camera_capture = cv2.VideoCapture(self.current_camera)
+                self.camera_capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                self.camera_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                
+                if not self.camera_capture.isOpened():
+                    self.scanner_status.text = '❌ Erro na Câmera'
+                    self.scanner_status.color = [0.9, 0.2, 0.2, 1]
+                    self.scanning = False
+                    self.scan_btn.text = '▶️ INICIAR'
+                    self.scan_btn.background_color = (0.16, 0.66, 0.26, 1)
+                    return
+                
+                self.last_barcode = None
+                self.last_barcode_time = 0
+                
+            except Exception as e:
+                print(f"❌ Erro ao inicializar câmera: {e}")
+                return
+        
+        # Capturar frame
+        ret, frame = self.camera_capture.read()
+        
+        if not ret:
+            return
+        
+        try:
+            current_time = time.time()
+            
+            # Melhorar qualidade do frame
+            frame = cv2.convertScaleAbs(frame, alpha=1.2, beta=10)
+            
+            # Decodificar códigos de barras
+            codes = decode(frame)
+            
+            if codes:
+                for code in codes:
+                    try:
+                        # Extrair código
+                        barcode_raw = code.data.decode('utf-8')
+                        barcode_value = ''.join(
+                            c for c in barcode_raw if c.isprintable()
+                        ).strip()
+                        
+                        # Evitar detecções duplicadas (cooldown de 2 segundos)
+                        if (barcode_value == self.last_barcode and 
+                            (current_time - self.last_barcode_time) < 2):
+                            continue
+                        
+                        self.last_barcode = barcode_value
+                        self.last_barcode_time = current_time
+                        
+                        print(f"\n{'='*70}")
+                        print(f"📷 CÓDIGO DETECTADO: '{barcode_value}'")
+                        print(f"{'='*70}\n")
+                        
+                        # Atualizar status
+                        self.scanner_status.text = '✅ Código Detectado'
+                        self.scanner_status.color = [0.16, 0.72, 0.22, 1]
+                        
+                        # Atualizar campo de código de barras
+                        self.barcode_input.text = barcode_value
+                        
+                        # Mostrar mensagem de sucesso
+                        self.admin_screen.show_popup(
+                            "Sucesso",
+                            f"Código detectado: {barcode_value}"
+                        )
+                        
+                        # Desenhar retângulo verde no código
+                        pts = code.polygon
+                        if len(pts) == 4:
+                            pts = [(int(p.x), int(p.y)) for p in pts]
+                            cv2.polylines(
+                                frame,
+                                [np.array(pts, dtype=np.int32)],
+                                True,
+                                (0, 255, 0),
+                                3
+                            )
+                        
+                        # Desenhar texto com o código
+                        x, y, w, h = code.rect
+                        cv2.putText(
+                            frame,
+                            barcode_value,
+                            (x, y - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.6,
+                            (0, 255, 0),
+                            2
+                        )
+                        
+                    except Exception as e:
+                        print(f"❌ Erro ao processar código: {e}")
+                        continue
+            
+            else:
+                # Resetar status após 2.5 segundos sem detecção
+                if (current_time - self.last_barcode_time) > 2.5:
+                    self.scanner_status.text = '🟢 Scanner Ativo'
+                    self.scanner_status.color = [0.16, 0.72, 0.22, 1]
+            
+            # Converter frame para textura Kivy
+            buf = cv2.flip(frame, 0).tobytes()
+            texture = Texture.create(
+                size=(frame.shape[1], frame.shape[0]),
+                colorfmt='bgr'
+            )
+            texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
+            self.camera_image.texture = texture
+            
+        except Exception as e:
+            print(f"❌ Erro no update_camera: {e}")
+    
+    def _switch_camera(self, instance):
+        """Trocar câmera (igual ao ModernSalesScreen)"""
+        was_scanning = self.scanning
+        
+        # Parar scanner temporariamente
+        if self.scanning:
+            self.scanning = False
+            Clock.unschedule(self._update_camera)
+            if self.camera_capture:
+                self.camera_capture.release()
+                self.camera_capture = None
+        
+        # Alternar ID da câmera (0, 1, 2)
+        self.current_camera = (self.current_camera + 1) % 3
+        
+        # Mostrar mensagem
+        self.admin_screen.show_popup(
+            "Info",
+            f'📷 Trocado para Câmera {self.current_camera}'
+        )
+        
+        # Reiniciar se estava rodando
+        if was_scanning:
+            Clock.schedule_once(lambda dt: self._restart_scanner(), 0.3)
+    
+    def _restart_scanner(self):
+        """Reiniciar scanner após trocar câmera"""
+        self.scanning = True
+        self.scan_btn.text = '⏹️ PARAR'
+        self.scan_btn.background_color = (0.88, 0.26, 0.26, 1)
+        self.scanner_status.text = '🟢 Scanner Ativo'
+        self.scanner_status.color = (0.16, 0.72, 0.22, 1)
+        Clock.schedule_interval(self._update_camera, 1.0/15.0)
+    
+    # ==================== GERENCIAMENTO DE CATEGORIA ====================
+    
+    def _show_category_form(self, instance):
+        """Exibir formulário para adicionar categoria"""
+        content = BoxLayout(
+            orientation='vertical',
+            padding=dp(15),
+            spacing=dp(15)
+        )
         
         content.add_widget(Label(
             text='Digite o nome da nova categoria:',
-            size_hint_y=0.3
+            size_hint_y=0.3,
+            color=(0.2, 0.2, 0.2, 1),
+            font_size=sp(15)
         ))
         
         category_input = TextInput(
             multiline=False,
             size_hint_y=0.3,
-            hint_text='Ex: Eletrônicos, Alimentos, etc.'
+            hint_text='Ex: Eletrônicos, Alimentos, etc.',
+            font_size=sp(15),
+            padding=[dp(10), dp(10)]
         )
         content.add_widget(category_input)
         
-        button_layout = BoxLayout(size_hint_y=0.4, spacing=10)
+        button_layout = BoxLayout(size_hint_y=0.4, spacing=dp(10))
         
         popup = Popup(
-            title='Adicionar Categoria',
+            title='➕ Adicionar Categoria',
             content=content,
             size_hint=(None, None),
-            size=(400, 250),
-            auto_dismiss=False
+            size=(dp(450), dp(280)),
+            auto_dismiss=False,
+            separator_color=(0.2, 0.7, 0.3, 1)
         )
         
         cancel_btn = Button(
-            text='Cancelar',
-            background_color=(0.7, 0.7, 0.7, 1)
+            text='❌ Cancelar',
+            background_color=(0.7, 0.3, 0.3, 1),
+            font_size=sp(14),
+            bold=True,
+            background_normal=''
         )
         cancel_btn.bind(on_release=popup.dismiss)
         
         add_btn = Button(
-            text='Adicionar',
-            background_color=(0.1, 0.6, 0.2, 1)
+            text='✅ Adicionar',
+            background_color=(0.2, 0.7, 0.3, 1),
+            font_size=sp(14),
+            bold=True,
+            background_normal=''
         )
         
         def add_category(instance):
             new_category = category_input.text.strip()
-            if new_category:
-                current_values = list(self.category_spinner.values)
-                if new_category not in current_values:
-                    current_values.append(new_category)
-                    self.category_spinner.values = sorted(current_values)
-                    self.category_spinner.text = new_category
-                    
-                    admin_values = list(self.admin_screen.category_spinner.values)
-                    if new_category not in admin_values:
-                        admin_values.append(new_category)
-                        self.admin_screen.category_spinner.values = sorted(admin_values)
-                    
-                    popup.dismiss()
-                    self.admin_screen.show_popup("Sucesso", f"Categoria '{new_category}' adicionada!")
-                else:
-                    self.admin_screen.show_popup("Aviso", "Esta categoria já existe!")
-            else:
-                self.admin_screen.show_popup("Erro", "Digite um nome para a categoria!")
+            
+            if not new_category:
+                self.admin_screen.show_popup(
+                    "Erro",
+                    "Digite um nome para a categoria!"
+                )
+                return
+            
+            # Verificar se já existe
+            current_values = list(self.category_spinner.values)
+            
+            if new_category in current_values:
+                self.admin_screen.show_popup(
+                    "Aviso",
+                    "Esta categoria já existe!"
+                )
+                return
+            
+            # Adicionar nova categoria
+            current_values.append(new_category)
+            self.category_spinner.values = sorted(current_values)
+            self.category_spinner.text = new_category
+            
+            # Atualizar também no admin screen
+            admin_values = list(self.admin_screen.category_spinner.values)
+            if new_category not in admin_values:
+                admin_values.append(new_category)
+                self.admin_screen.category_spinner.values = sorted(admin_values)
+            
+            popup.dismiss()
+            self.admin_screen.show_popup(
+                "Sucesso",
+                f"Categoria '{new_category}' adicionada!"
+            )
         
         add_btn.bind(on_release=add_category)
         
@@ -1040,275 +1505,33 @@ class ProductForm(Popup):
         content.add_widget(button_layout)
         
         popup.open()
-
-    # ================= SCAN BARCODE (CORRIGIDO COM THREADING) =================
-    def scan_barcode(self, instance):
-        """Iniciar scanner em thread separada"""
-        if self.scanning:
-            self.admin_screen.show_popup("Aviso", "Scanner já está ativo!")
-            return
-        
-        self.scanning = True
-        self.scanner_thread = threading.Thread(target=self._scan_barcode_thread, daemon=True)
-        self.scanner_thread.start()
     
-    def _scan_barcode_thread(self):
-        """Scanner de código de barras rodando em thread - SEM acesso ao banco aqui"""
-        current_camera = 0
-        cap = cv2.VideoCapture(current_camera)
-        barcode_value = None
-        scan_attempts = 0
-        
-        if not cap.isOpened():
-            Clock.schedule_once(lambda dt: self.admin_screen.show_popup(
-                "Erro", "Não foi possível abrir a câmera!"))
-            self.scanning = False
-            return
-        
-        window_name = "Scanner de Codigo de Barras"
-        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(window_name, 1000, 600)
-        
+    # ==================== SALVAR PRODUTO ====================
+    
+    def _save_product(self, instance):
+        """Salvar ou atualizar produto no banco de dados"""
         try:
-            while self.scanning:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                
-                scan_attempts += 1
-                
-                # Criar canvas
-                canvas = np.ones((600, 1000, 3), dtype=np.uint8) * 240
-                
-                # Área da câmera
-                camera_width = 275
-                camera_height = 200
-                camera_x = 680
-                camera_y = 20
-                
-                small_frame = cv2.resize(frame, (camera_width, camera_height))
-                canvas[camera_y:camera_y+camera_height, camera_x:camera_x+camera_width] = small_frame
-                
-                cv2.rectangle(canvas, (camera_x-2, camera_y-2), 
-                             (camera_x+camera_width+2, camera_y+camera_height+2), 
-                             (0, 120, 255), 2)
-                
-                # Informações
-                info_x = 30
-                info_y = 50
-                
-                cv2.putText(canvas, "SCANNER DE CODIGO DE BARRAS", 
-                           (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (50, 50, 50), 3)
-                
-                cv2.line(canvas, (info_x, info_y+15), (650, info_y+15), (100, 100, 100), 2)
-                
-                info_y += 70
-                camera_name = "PC (Camera 0)" if current_camera == 0 else "Celular (Camera 1)"
-                cv2.putText(canvas, f"Camera Ativa: {camera_name}", 
-                           (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (50, 50, 50), 2)
-                
-                info_y += 50
-                cv2.putText(canvas, f"Tentativas de Scan: {scan_attempts}", 
-                           (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (80, 80, 80), 1)
-                
-                # Decodificar código de barras
-                decoded_objects = decode(frame)
-                
-                if decoded_objects:
-                    for obj in decoded_objects:
-                        # ✅ LIMPAR O CÓDIGO
-                        barcode_raw = obj.data.decode('utf-8')
-                        barcode_value = ''.join(c for c in barcode_raw if c.isprintable()).strip()
-                        barcode_type = obj.type
-                        
-                        print(f"\n{'='*70}")
-                        print(f"📷 CÓDIGO ESCANEADO NO FORMULÁRIO")
-                        print(f"{'='*70}")
-                        print(f"Código bruto: '{barcode_raw}' (tamanho: {len(barcode_raw)})")
-                        print(f"Código limpo: '{barcode_value}' (tamanho: {len(barcode_value)})")
-                        print(f"Tipo: {barcode_type}")
-                        print(f"{'='*70}\n")
-                        
-                        # Mostrar código encontrado
-                        info_y += 60
-                        cv2.rectangle(canvas, (info_x-10, info_y-35), 
-                                     (650, info_y+20), (50, 200, 50), -1)
-                        cv2.putText(canvas, "CODIGO DETECTADO!", 
-                                   (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 3)
-                        
-                        info_y += 50
-                        cv2.putText(canvas, f"Tipo: {barcode_type}", 
-                                   (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (50, 50, 50), 1)
-                        
-                        info_y += 40
-                        cv2.putText(canvas, f"Codigo: {barcode_value}", 
-                                   (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (50, 50, 50), 2)
-                        
-                        # Desenhar retângulo
-                        points = obj.polygon
-                        if len(points) == 4:
-                            pts = [(int(p.x * camera_width / frame.shape[1]), 
-                                   int(p.y * camera_height / frame.shape[0])) for p in points]
-                            for i in range(4):
-                                cv2.line(small_frame, pts[i], pts[(i+1)%4], (0, 255, 0), 3)
-                            canvas[camera_y:camera_y+camera_height, camera_x:camera_x+camera_width] = small_frame
-                        
-                        break
-                else:
-                    info_y += 60
-                    cv2.rectangle(canvas, (info_x-10, info_y-35), 
-                                 (650, info_y+20), (200, 200, 50), -1)
-                    cv2.putText(canvas, "Aguardando codigo...", 
-                               (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (50, 50, 50), 2)
-                
-                # Instruções
-                info_y = 400
-                cv2.putText(canvas, "INSTRUCOES:", 
-                           (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (50, 50, 50), 2)
-                
-                instructions = [
-                    "• Posicione o codigo de barras na frente da camera",
-                    "• Pressione 'C' para alternar entre cameras",
-                    "• Pressione 'Q' ou 'ESC' para sair",
-                    "• O codigo sera detectado automaticamente"
-                ]
-                
-                for i, instruction in enumerate(instructions):
-                    info_y += 35
-                    cv2.putText(canvas, instruction, 
-                               (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (80, 80, 80), 1)
-                
-                # Botões
-                button_y = 520
-                
-                cv2.rectangle(canvas, (info_x, button_y), (info_x+280, button_y+50), (0, 120, 255), -1)
-                cv2.rectangle(canvas, (info_x, button_y), (info_x+280, button_y+50), (0, 80, 200), 2)
-                cv2.putText(canvas, "[C] Alternar Camera", 
-                           (info_x+20, button_y+32), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                
-                cv2.rectangle(canvas, (info_x+300, button_y), (info_x+500, button_y+50), (200, 50, 50), -1)
-                cv2.rectangle(canvas, (info_x+300, button_y), (info_x+500, button_y+50), (150, 30, 30), 2)
-                cv2.putText(canvas, "[Q] Sair", 
-                           (info_x+340, button_y+32), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                
-                cv2.imshow(window_name, canvas)
-                
-                # Capturar teclas
-                key = cv2.waitKey(1) & 0xFF
-                
-                if barcode_value or key == ord('q') or key == 27:
-                    break
-                elif key == ord('c') or key == ord('C'):
-                    cap.release()
-                    current_camera = 1 if current_camera == 0 else 0
-                    cap = cv2.VideoCapture(current_camera)
-                    scan_attempts = 0
-                    
-                    if not cap.isOpened():
-                        Clock.schedule_once(lambda dt: self.admin_screen.show_popup(
-                            "Erro", f"Não foi possível abrir a câmera {current_camera}!"))
-                        current_camera = 1 if current_camera == 0 else 0
-                        cap = cv2.VideoCapture(current_camera)
-        
-        finally:
-            cap.release()
-            cv2.destroyAllWindows()
-            self.scanning = False
-            
-            # ✅ ATUALIZAR UI NA THREAD PRINCIPAL usando Clock
-            if barcode_value:
-                Clock.schedule_once(lambda dt: self._handle_barcode_success(barcode_value))
-
-    def _handle_barcode_success(self, barcode_value):
-        """Tratar sucesso do scan na thread principal (sem threading issues)"""
-        self.barcode_input.text = barcode_value
-        self.admin_screen.show_popup("Sucesso", f"Código detectado: {barcode_value}")
-
-    # ================= SAVE =================
-    def save_product(self, instance):
-        try:
-            # Validações
-            if not self.description.text.strip():
-                self.admin_screen.show_popup("Erro", "A descrição é obrigatória!")
+            # Validar campos obrigatórios
+            if not self._validate_fields():
                 return
             
-            if self.category_spinner.text == "Selecionar":
-                self.admin_screen.show_popup("Erro", "Selecione uma categoria!")
+            # Processar data de validade
+            expiry = self._process_expiry_date()
+            if expiry is False:
                 return
             
-            if not self.existing_stock.text.strip():
-                self.admin_screen.show_popup("Erro", "O estoque existente é obrigatório!")
-                return
-            
-            if not self.sale_price.text.strip():
-                self.admin_screen.show_popup("Erro", "O preço de venda é obrigatório!")
-                return
-            
-            if not self.total_purchase_price.text.strip():
-                self.admin_screen.show_popup("Erro", "O preço de compra total é obrigatório!")
-                return
-            
-            if not self.unit_purchase_price.text.strip():
-                self.admin_screen.show_popup("Erro", "O preço de compra unitário é obrigatório!")
-                return
-
-            # Data de validade
-            expiry = None
-            if self.expiry_date.text.strip():
-                try:
-                    expiry_dt = datetime.strptime(self.expiry_date.text.strip(), "%d/%m/%Y")
-                    expiry = expiry_dt.strftime("%Y-%m-%d")
-                except ValueError:
-                    self.admin_screen.show_popup(
-                        "Erro",
-                        "Data de validade inválida! Use o formato DD/MM/AAAA"
-                    )
-                    return
-
-            # Código de barras (limpar)
+            # Processar código de barras
             barcode_text = self.barcode_input.text.strip()
-            barcode = ''.join(c for c in barcode_text if c.isprintable()).strip() if barcode_text else None
-
-            # Vendido por KG
+            barcode = ''.join(
+                c for c in barcode_text if c.isprintable()
+            ).strip() if barcode_text else None
+            
+            # Vendido por peso
             is_sold_by_weight = self.is_sold_by_weight_switch.active
-
-            # ✅ CRIAR CONEXÃO NOVA NA THREAD PRINCIPAL
-            db = Database()
-
-            if self.product:
-                db.update_product(
-                    self.product[0],
-                    self.description.text.strip(),
-                    self.category_spinner.text,
-                    float(self.existing_stock.text),  # Agora aceita decimal
-                    float(self.sold_stock.text),      # Agora aceita decimal
-                    float(self.sale_price.text),
-                    float(self.total_purchase_price.text),
-                    float(self.unit_purchase_price.text),
-                    barcode,
-                    expiry,
-                    is_sold_by_weight  # NOVO PARÂMETRO
-                )
-                self.admin_screen.show_popup("Sucesso", "Produto atualizado com sucesso!")
-            else:
-                db.add_product(
-                    self.description.text.strip(),
-                    self.category_spinner.text,
-                    float(self.existing_stock.text),  # Agora aceita decimal
-                    float(self.sold_stock.text),      # Agora aceita decimal
-                    float(self.sale_price.text),
-                    float(self.total_purchase_price.text),
-                    float(self.unit_purchase_price.text),
-                    barcode,
-                    expiry,
-                    is_sold_by_weight  # NOVO PARÂMETRO
-                )
-                self.admin_screen.show_popup("Sucesso", "Produto adicionado com sucesso!")
-
-            db.close()
-            self.dismiss()
-            self.admin_screen.load_products()
-
+            
+            # Salvar no banco
+            self._save_to_database(barcode, expiry, is_sold_by_weight)
+        
         except ValueError as e:
             self.admin_screen.show_popup(
                 "Erro",
@@ -1319,19 +1542,166 @@ class ProductForm(Popup):
                 "Erro",
                 f"Erro ao salvar produto: {str(e)}"
             )
-
-    def on_window_resize(self, instance, width, height):
+    
+    def _validate_fields(self):
+        """Validar campos obrigatórios"""
+        validations = [
+            (
+                self.description.text.strip(),
+                "A descrição é obrigatória!"
+            ),
+            (
+                self.category_spinner.text != "Selecionar",
+                "Selecione uma categoria!"
+            ),
+            (
+                self.existing_stock.text.strip(),
+                "O estoque existente é obrigatório!"
+            ),
+            (
+                self.sale_price.text.strip(),
+                "O preço de venda é obrigatório!"
+            ),
+            (
+                self.total_purchase_price.text.strip(),
+                "O preço de compra total é obrigatório!"
+            ),
+            (
+                self.unit_purchase_price.text.strip(),
+                "O preço de compra unitário é obrigatório!"
+            )
+        ]
+        
+        for condition, message in validations:
+            if not condition:
+                self.admin_screen.show_popup("Erro", message)
+                return False
+        
+        return True
+    
+    def _process_expiry_date(self):
+        """Processar e validar data de validade"""
+        expiry = None
+        
+        if self.expiry_date.text.strip():
+            try:
+                expiry_dt = datetime.strptime(
+                    self.expiry_date.text.strip(),
+                    "%d/%m/%Y"
+                )
+                expiry = expiry_dt.strftime("%Y-%m-%d")
+            except ValueError:
+                self.admin_screen.show_popup(
+                    "Erro",
+                    "Data de validade inválida! Use o formato DD/MM/AAAA"
+                )
+                return False
+        
+        return expiry
+    
+    def _save_to_database(self, barcode, expiry, is_sold_by_weight):
+        """Salvar produto no banco de dados"""
+        from database import Database
+        
+        db = Database()
+        
+        try:
+            if self.product:
+                # Atualizar produto existente
+                db.update_product(
+                    self.product[0],
+                    self.description.text.strip(),
+                    self.category_spinner.text,
+                    float(self.existing_stock.text),
+                    float(self.sold_stock.text),
+                    float(self.sale_price.text),
+                    float(self.total_purchase_price.text),
+                    float(self.unit_purchase_price.text),
+                    barcode,
+                    expiry,
+                    is_sold_by_weight
+                )
+                self.admin_screen.show_popup(
+                    "Sucesso",
+                    "Produto atualizado com sucesso!"
+                )
+            else:
+                # Adicionar novo produto
+                db.add_product(
+                    self.description.text.strip(),
+                    self.category_spinner.text,
+                    float(self.existing_stock.text),
+                    float(self.sold_stock.text),
+                    float(self.sale_price.text),
+                    float(self.total_purchase_price.text),
+                    float(self.unit_purchase_price.text),
+                    barcode,
+                    expiry,
+                    is_sold_by_weight
+                )
+                self.admin_screen.show_popup(
+                    "Sucesso",
+                    "Produto adicionado com sucesso!"
+                )
+            
+            self.dismiss()
+            self.admin_screen.load_products()
+        
+        finally:
+            db.close()
+    
+    # ==================== PREENCHER CAMPOS ====================
+    
+    def _populate_fields(self):
+        """Preencher campos ao editar produto"""
+        product = self.product
+        
+        # Campos básicos
+        self.description.text = product[1]
+        self.category_spinner.text = product[11] if len(product) > 11 else "Selecionar"
+        self.existing_stock.text = str(product[2])
+        self.sold_stock.text = str(product[3])
+        self.sale_price.text = str(product[4])
+        self.total_purchase_price.text = str(product[5])
+        self.unit_purchase_price.text = str(product[6])
+        
+        # Código de barras
+        if len(product) > 12 and product[12]:
+            self.barcode_input.text = str(product[12])
+        
+        # Data de validade
+        if len(product) > 13 and product[13]:
+            try:
+                dt = datetime.strptime(str(product[13]), "%Y-%m-%d")
+                self.expiry_date.text = dt.strftime("%d/%m/%Y")
+            except:
+                self.expiry_date.text = str(product[13])
+        
+        # Vendido por peso
+        if len(product) > 15:
+            self.is_sold_by_weight_switch.active = bool(product[15])
+    
+    # ==================== EVENTOS ====================
+    
+    def _on_window_resize(self, instance, width, height):
+        """Ajustar tamanho ao redimensionar janela"""
         self.size = (
-            min(dp(700), width * 0.9),
-            min(dp(750), height * 0.9)
+            min(dp(1100), width * 0.95),
+            min(dp(800), height * 0.9)
         )
     
     def on_dismiss(self):
-        """Parar scanner ao fechar popup"""
-        self.scanning = False
-        if self.scanner_thread and self.scanner_thread.is_alive():
-            self.scanner_thread.join(timeout=1)
-
+        """Limpar recursos ao fechar popup"""
+        # Parar scanner
+        if self.scanning:
+            self.scanning = False
+            Clock.unschedule(self._update_camera)
+            if self.camera_capture:
+                self.camera_capture.release()
+                self.camera_capture = None
+        
+        # Unbind eventos
+        Window.unbind(on_resize=self._on_window_resize)
 
 
 class AdminScreen(Screen):
@@ -1417,94 +1787,207 @@ class AdminScreen(Screen):
         if products_to_display is None:
             products_to_display = self.products
 
-        for product in products_to_display:
+        for idx, product in enumerate(products_to_display):
+            # Cor de fundo alternada para as linhas
+            row_bg_color = [0.98, 0.99, 1, 1] if idx % 2 == 0 else [1, 1, 1, 1]
             # ID - 0.07
+            id_container = BoxLayout(size_hint_x=0.07)
+            id_container.canvas.before.clear()
+            with id_container.canvas.before:
+                Color(*row_bg_color)
+                Rectangle(pos=id_container.pos, size=id_container.size)
+                Color(0, 0, 0, 1)  # Cor preta
+                Line(points=[id_container.x, id_container.y, id_container.x, id_container.top], width=1)  # Linha vertical esquerda
+                Line(points=[id_container.right, id_container.y, id_container.right, id_container.top], width=1)  # Linha vertical direita
+                Line(points=[id_container.x, id_container.top, id_container.right, id_container.top], width=1)  # Linha horizontal topo
+                Line(points=[id_container.x, id_container.y, id_container.right, id_container.y], width=1)  # Linha horizontal baixo
+            
             id_label = Label(
                 text=str(product[0]), 
-                size_hint_x=0.07, 
-                color=[0, 0, 0, 1],
+                color=[0.3, 0.35, 0.45, 1],
                 halign='center',
-                valign='middle'
+                valign='middle',
+                bold=True
             )
+            id_container.add_widget(id_label)
+            id_container.bind(pos=lambda w, v: self.update_cell_bg(w, row_bg_color, True, True), 
+                            size=lambda w, v: self.update_cell_bg(w, row_bg_color, True, True))
             
             # Descrição - 0.18
+            desc_container = BoxLayout(size_hint_x=0.18, padding=[10, 0])
+            desc_container.canvas.before.clear()
+            with desc_container.canvas.before:
+                Color(*row_bg_color)
+                Rectangle(pos=desc_container.pos, size=desc_container.size)
+                Color(0, 0, 0, 1)  # Cor preta
+                Line(points=[desc_container.right, desc_container.y, desc_container.right, desc_container.top], width=1)
+                Line(points=[desc_container.x, desc_container.top, desc_container.right, desc_container.top], width=1)
+                Line(points=[desc_container.x, desc_container.y, desc_container.right, desc_container.y], width=1)
+            
             desc_label = Label(
                 text=product[1], 
-                size_hint_x=0.18, 
-                color=[0, 0, 0, 1],
+                color=[0.2, 0.25, 0.35, 1],
                 text_size=(None, None), 
                 shorten=True, 
-                halign='center',
+                halign='left',
                 valign='middle'
             )
+            desc_container.add_widget(desc_label)
+            desc_container.bind(pos=lambda w, v: self.update_cell_bg(w, row_bg_color, True, False), 
+                            size=lambda w, v: self.update_cell_bg(w, row_bg_color, True, False))
             
             # Verificar se é vendido por peso (índice 15)
             is_sold_by_weight = product[15] if len(product) > 15 else 0
             unit_label = "kg" if is_sold_by_weight else "un"
             
             # Estoque - 0.09
+            stock_container = BoxLayout(size_hint_x=0.09)
+            stock_container.canvas.before.clear()
+            with stock_container.canvas.before:
+                Color(*row_bg_color)
+                Rectangle(pos=stock_container.pos, size=stock_container.size)
+                Color(0, 0, 0, 1)  # Cor preta
+                Line(points=[stock_container.right, stock_container.y, stock_container.right, stock_container.top], width=1)
+                Line(points=[stock_container.x, stock_container.top, stock_container.right, stock_container.top], width=1)
+                Line(points=[stock_container.x, stock_container.y, stock_container.right, stock_container.y], width=1)
+            
             stock_value = product[2]
             stock_text = f"{stock_value:.2f} {unit_label}" if is_sold_by_weight else f"{int(stock_value)} {unit_label}"
             stock_label = Label(
                 text=stock_text, 
-                size_hint_x=0.09, 
-                color=[0, 0, 0, 1],
+                color=[0.2, 0.25, 0.35, 1],
                 halign='center',
                 valign='middle'
             )
+            stock_container.add_widget(stock_label)
+            stock_container.bind(pos=lambda w, v: self.update_cell_bg(w, row_bg_color, True, False), 
+                            size=lambda w, v: self.update_cell_bg(w, row_bg_color, True, False))
             
             # Vendido - 0.09
+            sold_container = BoxLayout(size_hint_x=0.09)
+            sold_container.canvas.before.clear()
+            with sold_container.canvas.before:
+                Color(*row_bg_color)
+                Rectangle(pos=sold_container.pos, size=sold_container.size)
+                Color(0, 0, 0, 1)  # Cor preta
+                Line(points=[sold_container.right, sold_container.y, sold_container.right, sold_container.top], width=1)
+                Line(points=[sold_container.x, sold_container.top, sold_container.right, sold_container.top], width=1)
+                Line(points=[sold_container.x, sold_container.y, sold_container.right, sold_container.y], width=1)
+            
             sold_value = product[3]
             sold_text = f"{sold_value:.2f} {unit_label}" if is_sold_by_weight else f"{int(sold_value)} {unit_label}"
             sold_stock_label = Label(
-                text=sold_text, 
-                size_hint_x=0.09, 
-                color=[0, 0, 0, 1],
+                text=sold_text,
+                color=[0.2, 0.25, 0.35, 1],
                 halign='center',
                 valign='middle'
             )
+            sold_container.add_widget(sold_stock_label)
+            sold_container.bind(pos=lambda w, v: self.update_cell_bg(w, row_bg_color, True, False), 
+                            size=lambda w, v: self.update_cell_bg(w, row_bg_color, True, False))
             
-            # Tipo de Venda - 0.09 - ATUALIZADO
+            # Tipo de Venda - 0.09
+            tipo_container = BoxLayout(size_hint_x=0.09)
+            tipo_container.canvas.before.clear()
+            with tipo_container.canvas.before:
+                Color(*row_bg_color)
+                Rectangle(pos=tipo_container.pos, size=tipo_container.size)
+                Color(0, 0, 0, 1)  # Cor preta
+                Line(points=[tipo_container.right, tipo_container.y, tipo_container.right, tipo_container.top], width=1)
+                Line(points=[tipo_container.x, tipo_container.top, tipo_container.right, tipo_container.top], width=1)
+                Line(points=[tipo_container.x, tipo_container.y, tipo_container.right, tipo_container.y], width=1)
+            
             tipo_venda_label = Label(
-                text="Por KG" if is_sold_by_weight else "Por Unidade", 
-                size_hint_x=0.09, 
+                text="Por KG" if is_sold_by_weight else "Por Unid.", 
                 color=[0.8, 0.4, 0.0, 1] if is_sold_by_weight else [0.1, 0.5, 0.8, 1],
+                halign='center',
+                valign='middle',
+                bold=True,
+                font_size='12sp'
+            )
+            tipo_container.add_widget(tipo_venda_label)
+            tipo_container.bind(pos=lambda w, v: self.update_cell_bg(w, row_bg_color, True, False), 
+                            size=lambda w, v: self.update_cell_bg(w, row_bg_color, True, False))
+            
+            # Preço - 0.11
+            price_container = BoxLayout(size_hint_x=0.11)
+            price_container.canvas.before.clear()
+            with price_container.canvas.before:
+                Color(*row_bg_color)
+                Rectangle(pos=price_container.pos, size=price_container.size)
+                Color(0, 0, 0, 1)  # Cor preta
+                Line(points=[price_container.right, price_container.y, price_container.right, price_container.top], width=1)
+                Line(points=[price_container.x, price_container.top, price_container.right, price_container.top], width=1)
+                Line(points=[price_container.x, price_container.y, price_container.right, price_container.y], width=1)
+            
+            price_label = Label(
+                text=f"MZN {product[4]:.2f}",
+                color=[0.1, 0.5, 0.2, 1],
                 halign='center',
                 valign='middle',
                 bold=True
             )
-            
-            # Preço - 0.11
-            price_label = Label(
-                text=f"MZN {product[4]:.2f}", 
-                size_hint_x=0.11, 
-                color=[0, 0, 0, 1],
-                halign='center',
-                valign='middle'
-            )
+            price_container.add_widget(price_label)
+            price_container.bind(pos=lambda w, v: self.update_cell_bg(w, row_bg_color, True, False), 
+                            size=lambda w, v: self.update_cell_bg(w, row_bg_color, True, False))
             
             # Lucro - 0.11
+            profit_container = BoxLayout(size_hint_x=0.11)
+            profit_container.canvas.before.clear()
+            with profit_container.canvas.before:
+                Color(*row_bg_color)
+                Rectangle(pos=profit_container.pos, size=profit_container.size)
+                Color(0, 0, 0, 1)  # Cor preta
+                Line(points=[profit_container.right, profit_container.y, profit_container.right, profit_container.top], width=1)
+                Line(points=[profit_container.x, profit_container.top, profit_container.right, profit_container.top], width=1)
+                Line(points=[profit_container.x, profit_container.y, profit_container.right, profit_container.y], width=1)
+            
             total_profit_label = Label(
-                text=f"MZN {product[8]:.2f}", 
-                size_hint_x=0.11, 
-                color=[0, 0, 0, 1],
+                text=f"MZN {product[8]:.2f}",
+                color=[0.0, 0.4, 0.7, 1],
                 halign='center',
-                valign='middle'
+                valign='middle',
+                bold=True
             )
+            profit_container.add_widget(total_profit_label)
+            profit_container.bind(pos=lambda w, v: self.update_cell_bg(w, row_bg_color, True, False), 
+                                size=lambda w, v: self.update_cell_bg(w, row_bg_color, True, False))
             
             # Data de Adição - 0.12
+            date_container = BoxLayout(size_hint_x=0.12)
+            date_container.canvas.before.clear()
+            with date_container.canvas.before:
+                Color(*row_bg_color)
+                Rectangle(pos=date_container.pos, size=date_container.size)
+                Color(0, 0, 0, 1)  # Cor preta
+                Line(points=[date_container.right, date_container.y, date_container.right, date_container.top], width=1)
+                Line(points=[date_container.x, date_container.top, date_container.right, date_container.top], width=1)
+                Line(points=[date_container.x, date_container.y, date_container.right, date_container.y], width=1)
+            
             date_added = str(product[14]) if len(product) > 14 and product[14] else "N/A"
             date_label = Label(
-                text=self.format_datetime(date_added), 
-                size_hint_x=0.12, 
-                color=[0, 0, 0, 1],
+                text=self.format_datetime(date_added),
+                color=[0.4, 0.45, 0.5, 1],
                 halign='center',
                 valign='middle',
                 font_size='11sp'
             )
+            date_container.add_widget(date_label)
+            date_container.bind(pos=lambda w, v: self.update_cell_bg(w, row_bg_color, True, False), 
+                            size=lambda w, v: self.update_cell_bg(w, row_bg_color, True, False))
             
             # Ações - 0.14
-            action_layout = BoxLayout(spacing=5, size_hint_x=0.14)
+            action_container = BoxLayout(size_hint_x=0.14)
+            action_container.canvas.before.clear()
+            with action_container.canvas.before:
+                Color(*row_bg_color)
+                Rectangle(pos=action_container.pos, size=action_container.size)
+                Color(0, 0, 0, 1)  # Cor preta
+                Line(points=[action_container.right, action_container.y, action_container.right, action_container.top], width=1)
+                Line(points=[action_container.x, action_container.top, action_container.right, action_container.top], width=1)
+                Line(points=[action_container.x, action_container.y, action_container.right, action_container.y], width=1)
+            
+            action_layout = BoxLayout(spacing=5, padding=[5, 0])
             
             # Criar botões com bordas coloridas
             detail_btn = self.create_detail_button(product[0])
@@ -1516,16 +1999,51 @@ class AdminScreen(Screen):
             action_layout.add_widget(edit_btn)
             action_layout.add_widget(delete_btn)
             
+            action_container.add_widget(action_layout)
+            action_container.bind(pos=lambda w, v: self.update_cell_bg(w, row_bg_color, False, False), 
+                                size=lambda w, v: self.update_cell_bg(w, row_bg_color, False, False))
+            
             # Adicionar todos os widgets à tabela (9 colunas)
-            self.product_table.add_widget(id_label)
-            self.product_table.add_widget(desc_label)
-            self.product_table.add_widget(stock_label)
-            self.product_table.add_widget(sold_stock_label)
-            self.product_table.add_widget(tipo_venda_label)  # TIPO DE VENDA
-            self.product_table.add_widget(price_label)
-            self.product_table.add_widget(total_profit_label)
-            self.product_table.add_widget(date_label)
-            self.product_table.add_widget(action_layout)
+            self.product_table.add_widget(id_container)
+            self.product_table.add_widget(desc_container)
+            self.product_table.add_widget(stock_container)
+            self.product_table.add_widget(sold_container)
+            self.product_table.add_widget(tipo_container)
+            self.product_table.add_widget(price_container)
+            self.product_table.add_widget(profit_container)
+            self.product_table.add_widget(date_container)
+            self.product_table.add_widget(action_container)
+            
+            # Adicionar linha horizontal divisória no final da linha (exceto última)
+            if idx < len(products_to_display) - 1:
+                for i in range(9):
+                    separator = Widget(size_hint_y=None, height=0.1, size_hint_x=[0.07, 0.18, 0.09, 0.09, 0.09, 0.11, 0.11, 0.12, 0.14][i])
+                    with separator.canvas:
+                        Color(0, 0, 0, 1)  # Cor preta
+                        Rectangle(pos=separator.pos, size=separator.size)
+                    separator.bind(pos=lambda w, v: self.update_separator(w), size=lambda w, v: self.update_separator(w))
+                    self.product_table.add_widget(separator)
+    
+    def update_separator(self, widget):
+        """Atualizar linha separadora"""
+        widget.canvas.clear()
+        with widget.canvas:
+            Color(0, 0, 0, 1)  # Cor preta
+            Rectangle(pos=widget.pos, size=widget.size)
+    
+    def update_cell_bg(self, widget, bg_color, add_line=True, add_left_line=False):
+        """Atualizar o fundo e linha da célula"""
+        widget.canvas.before.clear()
+        with widget.canvas.before:
+            Color(*bg_color)
+            Rectangle(pos=widget.pos, size=widget.size)
+            Color(0, 0, 0, 1)  # Cor preta
+            if add_left_line:
+                Line(points=[widget.x, widget.y, widget.x, widget.top], width=1)  # Linha vertical esquerda
+            if add_line:
+                Line(points=[widget.right, widget.y, widget.right, widget.top], width=1)  # Linha vertical direita
+                Line(points=[widget.x, widget.top, widget.right, widget.top], width=1)  # Linha horizontal topo
+                Line(points=[widget.x, widget.y, widget.right, widget.y], width=1)  # Linha horizontal baixo
     
     # Métodos para criar botões com bordas
     def create_detail_button(self, product_id):
@@ -1683,26 +2201,42 @@ class AdminScreen(Screen):
             Clock.schedule_once(lambda dt: reports_screen.select_date_range(), 0.1)
     
     def toggle_kg_products(self):
-        """Alternar entre mostrar todos os produtos e apenas produtos com peso"""
-        if not hasattr(self, 'showing_kg_only'):
-            self.showing_kg_only = False
+        """Alternar entre 3 estados: Todos → Por KG → Por Unidade → Todos"""
+        if not hasattr(self, 'filter_mode'):
+            self.filter_mode = 0  # 0 = Todos, 1 = Por KG, 2 = Por Unidade
         
-        self.showing_kg_only = not self.showing_kg_only
+        # Avançar para o próximo modo
+        self.filter_mode = (self.filter_mode + 1) % 3
         
-        if self.showing_kg_only:
-            # Mostrar apenas produtos com peso > 0
+        if self.filter_mode == 1:
+            # Filtrar apenas produtos vendidos POR KG
             kg_products = self.db.get_products_by_weight()
             if kg_products:
                 self.update_product_table(kg_products)
-                self.show_popup("Filtro Ativo", f"Mostrando {len(kg_products)} produto(s) com peso cadastrado.")
             else:
-                self.show_popup("Aviso", "Nenhum produto com peso cadastrado encontrado.")
-                self.showing_kg_only = False
+                # Se não houver produtos por KG, pula para o próximo filtro
+                self.filter_mode = 2
+                unit_products = [p for p in self.products if not (len(p) > 15 and p[15])]
+                if unit_products:
+                    self.update_product_table(unit_products)
+                else:
+                    # Se também não houver produtos por unidade, volta para todos
+                    self.filter_mode = 0
+                    self.update_product_table(self.products)
+        
+        elif self.filter_mode == 2:
+            # Filtrar apenas produtos vendidos POR UNIDADE
+            unit_products = [p for p in self.products if not (len(p) > 15 and p[15])]
+            if unit_products:
+                self.update_product_table(unit_products)
+            else:
+                # Se não houver produtos por unidade, volta para todos
+                self.filter_mode = 0
                 self.update_product_table(self.products)
+        
         else:
-            # Mostrar todos os produtos
+            # Mostrar TODOS os produtos
             self.update_product_table(self.products)
-            self.show_popup("Filtro Removido", "Mostrando todos os produtos.")
     
     def logout(self):
         self.manager.current = "login"
